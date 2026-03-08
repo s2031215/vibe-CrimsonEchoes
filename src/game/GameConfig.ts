@@ -8,6 +8,10 @@ export const GAME_CONFIG = {
   HEIGHT: 270,
   SCALE: 2,
   BACKGROUND_COLOR: 0x000000, // Pure black - classic arcade style
+  
+  // Map
+  MAP_WIDTH: 1000,
+  MAP_HEIGHT: 1000,
 
   // Player
   PLAYER: {
@@ -72,7 +76,7 @@ export const GAME_CONFIG = {
     FIRE_RATE_BOOST: 0.5, // +50% fire rate
     HOMING_STRENGTH: 0.8, // Homing turn rate (0-1)
     HOMING_TURN_SPEED: 180, // Degrees per second
-    DIRECTIONAL_COUNT: 8, // Number of projectiles in directional blast
+    DIRECTIONAL_COUNT: 12, // Number of projectiles in directional blast
   },
 
   // Boss

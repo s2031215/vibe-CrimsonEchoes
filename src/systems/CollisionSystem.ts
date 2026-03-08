@@ -132,7 +132,9 @@ export class CollisionSystem {
               enemies,
               result,
               xpSystem,
-              spawnSystem
+              spawnSystem,
+              echoSystem,
+              playerPos
             );
           }
 
@@ -275,6 +277,73 @@ export class CollisionSystem {
             spawnSystem.releaseBoss(boss);
           }
           // Laser doesn't get destroyed on hit (pierces everything)
+        }
+      }
+    }
+
+    // Check dragon vs enemy collisions (dragons pierce through all enemies)
+    const dragons = echoSystem.getActiveDragons();
+    for (const dragon of dragons) {
+      if (!dragon.container.visible) continue;
+
+      for (const enemy of enemies) {
+        if (!enemy.state.active) continue;
+
+        if (
+          circlesCollide(
+            dragon.position,
+            dragon.radius,
+            enemy.state.position,
+            enemyRadius
+          )
+        ) {
+          // Dragon hit enemy! Dragons pierce, so don't destroy dragon
+          const killed = enemy.takeDamage(dragon.damage);
+
+          if (killed) {
+            result.enemiesKilled++;
+            xpSystem.spawnOrb(
+              enemy.state.position.x,
+              enemy.state.position.y,
+              enemy.state.xpValue
+            );
+            spawnSystem.releaseEnemy(enemy);
+          }
+        }
+      }
+    }
+
+    // Check dragon vs boss collisions
+    if (boss && boss.state.active) {
+      for (const dragon of dragons) {
+        if (!dragon.container.visible) continue;
+
+        if (
+          circlesCollide(
+            dragon.position,
+            dragon.radius,
+            boss.state.position,
+            bossRadius
+          )
+        ) {
+          // Dragon hit boss! Dragons pierce, so don't destroy dragon
+          const killed = boss.takeDamage(dragon.damage);
+
+          if (killed) {
+            result.enemiesKilled++;
+            
+            // Check if this is the final boss (type 2 at 5 minutes)
+            if (boss.bossType === 2) {
+              result.finalBossKilled = true;
+            }
+            
+            xpSystem.spawnOrb(
+              boss.state.position.x,
+              boss.state.position.y,
+              boss.state.xpValue
+            );
+            spawnSystem.releaseBoss(boss);
+          }
         }
       }
     }
@@ -542,7 +611,9 @@ export class CollisionSystem {
     enemies: ReadonlySet<Enemy>,
     result: CollisionResult,
     xpSystem: XPSystem,
-    spawnSystem: SpawnSystem
+    spawnSystem: SpawnSystem,
+    echoSystem: EchoSystem,
+    playerPos: Vec2
   ): void {
     if (remainingChains <= 0) return;
 
@@ -560,7 +631,17 @@ export class CollisionSystem {
       }
     }
 
-    if (!nearestEnemy) return;
+    // Spawn dragon if dragon mode is active and no next target found
+    if (!nearestEnemy) {
+      if (echoSystem.weaponStats.chainDragonMode) {
+        echoSystem.spawnDragon(
+          fromPos,
+          playerPos,
+          damage // Same damage as chain lightning
+        );
+      }
+      return;
+    }
 
     // Create visual lightning link
     const link = this.lightningLinkPool.acquire();
@@ -590,8 +671,19 @@ export class CollisionSystem {
         enemies,
         result,
         xpSystem,
-        spawnSystem
+        spawnSystem,
+        echoSystem,
+        playerPos
       );
+    } else {
+      // Last chain - spawn dragon if dragon mode is active
+      if (echoSystem.weaponStats.chainDragonMode) {
+        echoSystem.spawnDragon(
+          nearestEnemy.state.position,
+          playerPos,
+          damage // Same damage as chain lightning
+        );
+      }
     }
   }
 

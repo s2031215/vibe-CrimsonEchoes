@@ -7,6 +7,8 @@ import { GAME_CONFIG } from "@game/GameConfig";
 import { Projectile } from "@entities/Projectile";
 import { LaserBeam } from "@entities/LaserBeam";
 import { Meteorite } from "@entities/Meteorite";
+import { Dragon } from "@entities/Dragon";
+import { PlayerClone } from "@entities/PlayerClone";
 import { Enemy } from "@entities/Enemy";
 import { Boss } from "@entities/Boss";
 import { ObjectPool } from "@utils/pool";
@@ -17,6 +19,9 @@ export class EchoSystem {
   private projectilePool: ObjectPool<Projectile>;
   private laserBeamPool: ObjectPool<LaserBeam>;
   private meteoritePool: ObjectPool<Meteorite>;
+  private dragonPool: ObjectPool<Dragon>;
+  private clonePool: ObjectPool<PlayerClone>;
+  private activeClone: PlayerClone | null = null; // Only one clone
   private container: Container;
   private fireTimer: number = 0;
   private waveConnectorGraphics: Graphics;
@@ -47,9 +52,11 @@ export class EchoSystem {
     meteoriteCount: 2,
     meteoriteSpawnRadius: 150,
     chainCount: 0,
+    chainDragonMode: false,
     fireRateMultiplier: 1.0,
     homingStrength: 0,
     homingSpeedBoost: 1.0,
+    homingCloneMode: false,
     directionalMode: false,
     directionalCount: 4,
     directionalNovaMode: false,
@@ -105,6 +112,30 @@ export class EchoSystem {
       5, // Initial pool size
       10 // Max 10 meteorites
     );
+
+    // Initialize dragon pool (for Chain Lightning T3)
+    this.dragonPool = new ObjectPool<Dragon>(
+      () => {
+        const dragon = new Dragon();
+        this.container.addChild(dragon.container);
+        return dragon;
+      },
+      (dragon) => dragon.reset(),
+      3, // Initial pool size
+      8 // Max 8 dragons
+    );
+
+    // Initialize clone pool (for Homing Missiles T3) - only 1 clone
+    this.clonePool = new ObjectPool<PlayerClone>(
+      () => {
+        const clone = new PlayerClone();
+        this.container.addChild(clone.container);
+        return clone;
+      },
+      (clone) => clone.reset(),
+      1, // Initial pool size
+      1 // Max 1 clone
+    );
   }
 
   /** Update echo system - fire projectiles/lasers and update existing ones */
@@ -156,6 +187,62 @@ export class EchoSystem {
       const expired = meteorite.update(dt);
       if (expired && !meteorite.container.visible) {
         this.meteoritePool.release(meteorite);
+      }
+    }
+
+    // Update all active dragons
+    const screenWidth = GAME_CONFIG.WIDTH * GAME_CONFIG.SCALE;
+    const screenHeight = GAME_CONFIG.HEIGHT * GAME_CONFIG.SCALE;
+    for (const dragon of this.dragonPool.getActive()) {
+      const expired = dragon.update(dt, screenWidth, screenHeight);
+      if (expired && !dragon.container.visible) {
+        this.dragonPool.release(dragon);
+      }
+    }
+
+    // Spawn or update player clone (Homing Missiles T3) - only despawn when off-camera
+    if (this.weaponStats.homingCloneMode) {
+      // Spawn clone if not active
+      if (!this.activeClone || !this.activeClone.container.visible) {
+        this.activeClone = this.clonePool.acquire();
+        const cloneDamage = this.stats.damage * 0.5; // Clone does 50% damage
+        this.activeClone.activate(playerPos, cloneDamage);
+      }
+
+      // Update clone
+      if (this.activeClone && this.activeClone.container.visible) {
+        this.activeClone.update(dt, playerPos, enemies, (clonePos: Vec2) => {
+          // Clone fires projectile
+          const nearestEnemy = this.findNearestEnemy(clonePos, enemies, boss);
+          if (nearestEnemy) {
+            this.fireAtTargetFromClone(clonePos, nearestEnemy.state.position);
+          }
+        });
+        
+        // Check if clone moved outside camera bounds and despawn it
+        const screenWidth = GAME_CONFIG.WIDTH * GAME_CONFIG.SCALE;
+        const screenHeight = GAME_CONFIG.HEIGHT * GAME_CONFIG.SCALE;
+        const cameraLeft = playerPos.x - screenWidth / 2;
+        const cameraRight = playerPos.x + screenWidth / 2;
+        const cameraTop = playerPos.y - screenHeight / 2;
+        const cameraBottom = playerPos.y + screenHeight / 2;
+        
+        // Release clone if it's outside camera bounds
+        if (
+          this.activeClone.position.x < cameraLeft - 100 ||
+          this.activeClone.position.x > cameraRight + 100 ||
+          this.activeClone.position.y < cameraTop - 100 ||
+          this.activeClone.position.y > cameraBottom + 100
+        ) {
+          this.clonePool.release(this.activeClone);
+          this.activeClone = null;
+        }
+      }
+    } else {
+      // Deactivate clone if mode is disabled
+      if (this.activeClone && this.activeClone.container.visible) {
+        this.clonePool.release(this.activeClone);
+        this.activeClone = null;
       }
     }
 
@@ -236,6 +323,13 @@ export class EchoSystem {
     }
 
     return nearest;
+  }
+
+  /** Fire a projectile at target position (clone version, simplified) */
+  private fireAtTargetFromClone(from: Vec2, to: Vec2): void {
+    const direction = normalize(subtract(to, from));
+    let speed = this.stats.speed * this.weaponStats.homingSpeedBoost;
+    this.spawnProjectile(from.x, from.y, direction.x * speed, direction.y * speed);
   }
 
   /** Fire a projectile at target position */
@@ -434,62 +528,59 @@ export class EchoSystem {
     wave.push(proj);
   }
 
-  /** Fire nova burst - expanding ring with trails (Directional T3) */
+  /** Fire nova burst - Archimedean spiral flight paths (Directional T3) */
   private fireNovaBurst(from: Vec2, speed: number): void {
     const totalCount = this.weaponStats.directionalCount;
     const angleStep = (Math.PI * 2) / totalCount;
-    const spawnRadius = this.weaponStats.directionalNovaSpawnRadius;
-
+    
+    // Spiral flight parameters
+    const startRadius = 10;               // Start 10px from player
+    const angularVelocity = Math.PI * 1.5; // ~270°/second (tight spiral)
+    const growthRate = 15;                 // Radius grows 15px per radian
+    const direction = 1;                   // Counter-clockwise
+    
     for (let i = 0; i < totalCount; i++) {
-      const angle = angleStep * i;
+      // Evenly space starting angles around player
+      const startAngle = angleStep * i;
       
-      // Spawn projectile at a distance from player center (in a ring)
-      const spawnX = from.x + Math.cos(angle) * spawnRadius;
-      const spawnY = from.y + Math.sin(angle) * spawnRadius;
+      // Spawn at starting position
+      const spawnX = from.x + Math.cos(startAngle) * startRadius;
+      const spawnY = from.y + Math.sin(startAngle) * startRadius;
       
-      // Velocity points outward from player center
-      const vx = Math.cos(angle) * speed;
-      const vy = Math.sin(angle) * speed;
+      // Initial velocity (will be overridden by spiral behavior)
+      const vx = Math.cos(startAngle) * speed;
+      const vy = Math.sin(startAngle) * speed;
       
-      this.spawnNovaProjectile(from, spawnX, spawnY, angle, vx, vy);
+      const proj = this.projectilePool.acquire();
+      proj.activate(spawnX, spawnY, vx, vy, this.stats.damage);
+      
+      // Apply standard upgrades
+      proj.setUpgradeProperties(
+        this.weaponStats.pierceCount,
+        this.weaponStats.splitOnHit,
+        this.weaponStats.explosiveRadius > 0,
+        this.weaponStats.chainCount > 0,
+        this.weaponStats.chainCount,
+        this.weaponStats.homingStrength,
+        this.weaponStats.piercingSizeBoost
+      );
+      
+      // Enable trail effect
+      proj.state.hasTrail = true;
+      
+      // Enable Archimedean spiral flight
+      proj.enableSpiralFlight(
+        from,               // Spiral around player
+        startAngle,         // Start at evenly-spaced angle
+        startRadius,        // Start 10px from player
+        angularVelocity,    // Rotation speed
+        growthRate,         // Expansion speed
+        direction           // Counter-clockwise
+      );
+      
+      // Persist until leaving camera
+      proj.state.ignoreLifetime = true;
     }
-  }
-
-  /** Spawn a nova projectile with trail effects and orbital behavior */
-  private spawnNovaProjectile(
-    center: Vec2,
-    x: number,
-    y: number,
-    angle: number,
-    vx: number,
-    vy: number
-  ): void {
-    const proj = this.projectilePool.acquire();
-
-    proj.activate(x, y, vx, vy, this.stats.damage);
-
-    // Apply weapon upgrades (normal properties, no special damage)
-    proj.setUpgradeProperties(
-      this.weaponStats.pierceCount,
-      this.weaponStats.splitOnHit,
-      this.weaponStats.explosiveRadius > 0,
-      this.weaponStats.chainCount > 0,
-      this.weaponStats.chainCount,
-      this.weaponStats.homingStrength,
-      this.weaponStats.piercingSizeBoost
-    );
-
-    // Enable trail effect
-    proj.state.hasTrail = true;
-
-    // Enable orbital behavior (solar system style)
-    proj.state.isOrbiting = true;
-    proj.state.orbitCenter = { x: center.x, y: center.y };
-    proj.state.orbitAngle = angle;
-    proj.state.orbitRadius = this.weaponStats.directionalNovaSpawnRadius;
-    proj.state.orbitSpeed = this.weaponStats.directionalNovaOrbitSpeed;
-    proj.state.orbitDuration = this.weaponStats.directionalNovaOrbitDuration;
-    proj.state.orbitTimer = 0;
   }
 
   /** Spawn split projectiles from a hit */
@@ -564,6 +655,18 @@ export class EchoSystem {
     return this.meteoritePool.getActive();
   }
 
+  /** Get all active dragons for collision detection */
+  getActiveDragons(): ReadonlySet<Dragon> {
+    return this.dragonPool.getActive();
+  }
+
+  /** Spawn a dragon at position flying toward target */
+  spawnDragon(pos: Vec2, target: Vec2, damage: number): void {
+    const dragon = this.dragonPool.acquire();
+    const speed = this.stats.speed * 1.5; // Dragons fly 1.5x faster than projectiles
+    dragon.activate(pos, target, damage, speed);
+  }
+
   /** Spawn a meteorite at position */
   spawnMeteorite(pos: Vec2, radius: number, damage: number, duration: number): void {
     const meteorite = this.meteoritePool.acquire();
@@ -606,6 +709,9 @@ export class EchoSystem {
     this.projectilePool.releaseAll();
     this.laserBeamPool.releaseAll();
     this.meteoritePool.releaseAll();
+    this.dragonPool.releaseAll();
+    this.clonePool.releaseAll();
+    this.activeClone = null;
     this.fireTimer = 0;
     this.activeWaves = [];
     this.waveConnectorGraphics.clear();
@@ -632,9 +738,11 @@ export class EchoSystem {
     this.weaponStats.meteoriteCount = 2;
     this.weaponStats.meteoriteSpawnRadius = 150;
     this.weaponStats.chainCount = 0;
+    this.weaponStats.chainDragonMode = false;
     this.weaponStats.fireRateMultiplier = 1.0;
     this.weaponStats.homingStrength = 0;
     this.weaponStats.homingSpeedBoost = 1.0;
+    this.weaponStats.homingCloneMode = false;
     this.weaponStats.directionalMode = false;
     this.weaponStats.directionalCount = 4;
   }

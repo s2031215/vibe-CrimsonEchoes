@@ -176,12 +176,13 @@ const CHAIN_T2: Upgrade = {
 const CHAIN_T3: Upgrade = {
   id: "chain_t3",
   name: "Chain Lightning III",
-  description: "Chain to 4 nearby enemies",
+  description: "Chain to 4 enemies + spawn blue dragon",
   type: "weapon",
   weaponId: "chain_lightning",
   tier: 3,
   apply: (game: Game) => {
     game["echoSystem"].weaponStats.chainCount = 4;
+    game["echoSystem"].weaponStats.chainDragonMode = true;
     game["weaponTiers"].set("chain_lightning", 3);
   },
 };
@@ -254,13 +255,14 @@ const HOMING_T1: Upgrade = {
 const HOMING_T2: Upgrade = {
   id: "homing_t2",
   name: "Homing Missiles II",
-  description: "Strong tracking + 40% faster",
+  description: "Strong tracking + 2x fire rate + 2x speed",
   type: "weapon",
   weaponId: "homing_missiles",
   tier: 2,
   apply: (game: Game) => {
     game["echoSystem"].weaponStats.homingStrength = 0.7;
-    game["echoSystem"].weaponStats.homingSpeedBoost = 1.4; // 40% faster
+    game["echoSystem"].weaponStats.homingSpeedBoost = 2.0; // 2x speed
+    game["echoSystem"].weaponStats.fireRateMultiplier = 2.0; // 2x fire rate
     game["weaponTiers"].set("homing_missiles", 2);
   },
 };
@@ -268,13 +270,14 @@ const HOMING_T2: Upgrade = {
 const HOMING_T3: Upgrade = {
   id: "homing_t3",
   name: "Homing Missiles III",
-  description: "Perfect tracking + 60% faster",
+  description: "Perfect tracking + spawn player clone",
   type: "weapon",
   weaponId: "homing_missiles",
   tier: 3,
   apply: (game: Game) => {
     game["echoSystem"].weaponStats.homingStrength = 1.0;
     game["echoSystem"].weaponStats.homingSpeedBoost = 1.6; // 60% faster
+    game["echoSystem"].weaponStats.homingCloneMode = true;
     game["weaponTiers"].set("homing_missiles", 3);
   },
 };
@@ -313,15 +316,15 @@ const DIRECTIONAL_SHOT_T2: Upgrade = {
 const DIRECTIONAL_SHOT_T3: Upgrade = {
   id: "directional_shot_t3",
   name: "Orbital Nova",
-  description: "8 projectiles orbit like a solar system before flying away",
+  description: "12 projectiles spiral outward in an expanding pattern",
   type: "weapon",
   weaponId: "directional_shot",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.directionalCount = 8;
+    game["echoSystem"].weaponStats.directionalCount = 12;
     game["echoSystem"].weaponStats.directionalNovaMode = true;
     game["echoSystem"].weaponStats.directionalNovaSpawnRadius = 40;
-    game["echoSystem"].weaponStats.directionalNovaOrbitDuration = 1.5; // 1.5 seconds orbit
+    game["echoSystem"].weaponStats.directionalNovaOrbitDuration = 9999; // Orbit forever (never fly away)
     game["echoSystem"].weaponStats.directionalNovaOrbitSpeed = Math.PI * 2; // Full rotation per second
     game["weaponTiers"].set("directional_shot", 3);
   },

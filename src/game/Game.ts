@@ -2,7 +2,7 @@
 // Main Game Class
 // =============================================================================
 
-import { Container, Texture, TilingSprite } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { GAME_CONFIG } from "@game/GameConfig";
 import { Player } from "@entities/Player";
 import { InputSystem } from "@systems/InputSystem";
@@ -30,7 +30,8 @@ export class Game {
   private state: GameState = "playing";
   private elapsedTime: number = 0;
   private remainingTime: number;
-  private tilingSprite!: TilingSprite;
+  private backgroundGraphics!: Graphics;
+  private boundaryGraphics!: Graphics;
 
   // Systems
   private inputSystem: InputSystem;
@@ -109,42 +110,49 @@ export class Game {
     });
   }
 
-  /** Create tiled background procedurally */
+  /** Create static background (1000x1000 map with 800x800 red boundary) */
   private createBackground(): void {
     const tileSize = 32;
+    const mapWidth = GAME_CONFIG.MAP_WIDTH;
+    const mapHeight = GAME_CONFIG.MAP_HEIGHT;
 
-    // Create an offscreen canvas to draw our texture
-    const canvas = document.createElement('canvas');
-    canvas.width = tileSize;
-    canvas.height = tileSize;
-    const ctx = canvas.getContext('2d');
+    // Create a graphics object for the static map
+    this.backgroundGraphics = new Graphics();
 
-    if (ctx) {
-      // Draw base color (dark slate/purple)
-      ctx.fillStyle = '#1e1e24';
-      ctx.fillRect(0, 0, tileSize, tileSize);
+    // Draw tiled pattern across the entire map
+    for (let x = 0; x < mapWidth; x += tileSize) {
+      for (let y = 0; y < mapHeight; y += tileSize) {
+        // Base color (dark slate/purple)
+        this.backgroundGraphics.rect(x, y, tileSize, tileSize);
+        this.backgroundGraphics.fill('#1e1e24');
 
-      // Draw grid lines
-      ctx.fillStyle = '#2a2a35';
-      ctx.fillRect(0, 0, tileSize, 2);
-      ctx.fillRect(0, 0, 2, tileSize);
+        // Grid lines
+        this.backgroundGraphics.rect(x, y, tileSize, 2);
+        this.backgroundGraphics.fill('#2a2a35');
+        this.backgroundGraphics.rect(x, y, 2, tileSize);
+        this.backgroundGraphics.fill('#2a2a35');
 
-      // Add a small detail dot
-      ctx.fillStyle = '#111116';
-      ctx.fillRect(tileSize - 4, tileSize - 4, 2, 2);
+        // Detail dot
+        this.backgroundGraphics.rect(x + tileSize - 4, y + tileSize - 4, 2, 2);
+        this.backgroundGraphics.fill('#111116');
+      }
     }
 
-    // Convert canvas to Pixi Texture
-    const floorTile = Texture.from(canvas);
+    this.backgroundContainer.addChild(this.backgroundGraphics);
 
-    // Create tiling sprite to fill the screen
-    this.tilingSprite = new TilingSprite({
-      texture: floorTile,
-      width: GAME_CONFIG.WIDTH,
-      height: GAME_CONFIG.HEIGHT,
-    });
+    // Create red boundary in gameContainer (so it moves with the world)
+    this.boundaryGraphics = new Graphics();
+    const boundaryMargin = 100;
+    this.boundaryGraphics.rect(
+      boundaryMargin, 
+      boundaryMargin, 
+      800, 
+      800
+    );
+    this.boundaryGraphics.stroke({ color: 0xFF0000, width: 4 });
 
-    this.backgroundContainer.addChild(this.tilingSprite);
+    // Add boundary to gameContainer so it moves with camera
+    this.gameContainer.addChild(this.boundaryGraphics);
   }
 
   /** Main update loop */
@@ -265,13 +273,22 @@ export class Game {
       return;
     }
 
-    // Update camera (center on player)
-    const cameraX = GAME_CONFIG.WIDTH / 2 - this.player.state.position.x;
-    const cameraY = GAME_CONFIG.HEIGHT / 2 - this.player.state.position.y;
+    // Update camera (center on player, but constrain to map bounds)
+    const halfWidth = GAME_CONFIG.WIDTH / 2;
+    const halfHeight = GAME_CONFIG.HEIGHT / 2;
+    const mapWidth = GAME_CONFIG.MAP_WIDTH;
+    const mapHeight = GAME_CONFIG.MAP_HEIGHT;
     
-    // Parallax/scrolling background
-    this.tilingSprite.tilePosition.x = cameraX;
-    this.tilingSprite.tilePosition.y = cameraY;
+    let cameraX = halfWidth - this.player.state.position.x;
+    let cameraY = halfHeight - this.player.state.position.y;
+    
+    // Constrain camera to map bounds
+    cameraX = Math.min(0, Math.max(cameraX, GAME_CONFIG.WIDTH - mapWidth));
+    cameraY = Math.min(0, Math.max(cameraY, GAME_CONFIG.HEIGHT - mapHeight));
+    
+    // Move background with camera
+    this.backgroundContainer.x = cameraX;
+    this.backgroundContainer.y = cameraY;
 
     // Update UI
     this.healthBar.update(this.player.state.health);
@@ -345,8 +362,17 @@ export class Game {
 
   /** Update screen shake effect */
   private updateScreenShake(dt: number): void {
-    const cameraX = GAME_CONFIG.WIDTH / 2 - this.player.state.position.x;
-    const cameraY = GAME_CONFIG.HEIGHT / 2 - this.player.state.position.y;
+    const halfWidth = GAME_CONFIG.WIDTH / 2;
+    const halfHeight = GAME_CONFIG.HEIGHT / 2;
+    const mapWidth = GAME_CONFIG.MAP_WIDTH;
+    const mapHeight = GAME_CONFIG.MAP_HEIGHT;
+    
+    let cameraX = halfWidth - this.player.state.position.x;
+    let cameraY = halfHeight - this.player.state.position.y;
+    
+    // Constrain camera to map bounds
+    cameraX = Math.min(0, Math.max(cameraX, GAME_CONFIG.WIDTH - mapWidth));
+    cameraY = Math.min(0, Math.max(cameraY, GAME_CONFIG.HEIGHT - mapHeight));
 
     if (this.shakeDuration > 0) {
       this.shakeDuration -= dt;

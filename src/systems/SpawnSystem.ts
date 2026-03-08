@@ -206,6 +206,11 @@ export class SpawnSystem {
         break;
     }
 
+    // Clamp spawn position to 800x800 boundary (100px margin from map edges)
+    const boundaryMargin = 100;
+    x = Math.max(boundaryMargin, Math.min(GAME_CONFIG.MAP_WIDTH - boundaryMargin, x));
+    y = Math.max(boundaryMargin, Math.min(GAME_CONFIG.MAP_HEIGHT - boundaryMargin, y));
+
     return { x, y };
   }
 

@@ -33,8 +33,8 @@ export class Player {
 
     this.state = {
       position: {
-        x: GAME_CONFIG.WIDTH / 2,
-        y: GAME_CONFIG.HEIGHT / 2,
+        x: GAME_CONFIG.MAP_WIDTH / 2,
+        y: GAME_CONFIG.MAP_HEIGHT / 2,
       },
       velocity: { x: 0, y: 0 },
       active: true,
@@ -157,18 +157,16 @@ export class Player {
     this.state.position.x += this.state.velocity.x * dt;
     this.state.position.y += this.state.velocity.y * dt;
 
-    // Remove screen bounds to allow infinite movement
-    // const halfSize = GAME_CONFIG.PLAYER.SIZE / 2;
-    // this.state.position.x = clamp(
-    //   this.state.position.x,
-    //   halfSize,
-    //   GAME_CONFIG.WIDTH - halfSize
-    // );
-    // this.state.position.y = clamp(
-    //   this.state.position.y,
-    //   halfSize,
-    //   GAME_CONFIG.HEIGHT - halfSize
-    // );
+    // Clamp player to 800x800 boundary (100px margin from map edges)
+    const halfSize = GAME_CONFIG.PLAYER.SIZE / 2;
+    const boundaryMargin = 100;
+    const minX = boundaryMargin + halfSize;
+    const maxX = GAME_CONFIG.MAP_WIDTH - boundaryMargin - halfSize;
+    const minY = boundaryMargin + halfSize;
+    const maxY = GAME_CONFIG.MAP_HEIGHT - boundaryMargin - halfSize;
+    
+    this.state.position.x = Math.max(minX, Math.min(maxX, this.state.position.x));
+    this.state.position.y = Math.max(minY, Math.min(maxY, this.state.position.y));
 
     // Update animation
     this.updateAnimation(dt, moveDir);
@@ -206,8 +204,8 @@ export class Player {
       dashSpeed: GAME_CONFIG.PLAYER.DASH_SPEED,
       dashDuration: GAME_CONFIG.PLAYER.DASH_DURATION,
     };
-    this.state.position.x = GAME_CONFIG.WIDTH / 2;
-    this.state.position.y = GAME_CONFIG.HEIGHT / 2;
+    this.state.position.x = GAME_CONFIG.MAP_WIDTH / 2;
+    this.state.position.y = GAME_CONFIG.MAP_HEIGHT / 2;
     this.state.velocity.x = 0;
     this.state.velocity.y = 0;
     this.state.health = this.stats.maxHealth;

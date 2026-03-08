@@ -46,6 +46,15 @@ export interface ProjectileState extends EntityState {
   orbitSpeed: number; // Angular velocity (radians per second)
   orbitDuration: number; // How long to orbit before flying away
   orbitTimer: number; // Time spent orbiting
+  ignoreLifetime: boolean; // Persists until leaving screen instead of timing out
+  // Archimedean spiral flight properties
+  isSpiralFlight: boolean; // Projectile flies in spiral path
+  spiralCenter: Vec2 | undefined; // Center point to spiral around
+  spiralAngle: number; // Current angle in spiral (radians)
+  spiralAngularVelocity: number; // How fast angle increases (rad/s)
+  spiralGrowthRate: number; // How fast radius grows (k parameter)
+  spiralStartRadius: number; // Initial radius (r₀)
+  spiralDirection: number; // 1 = CCW, -1 = CW
 }
 
 /** Enemy state */
@@ -114,9 +123,11 @@ export interface WeaponStats {
   meteoriteCount: number; // Number of meteorites to spawn per fire
   meteoriteSpawnRadius: number; // Radius around player to spawn meteorites
   chainCount: number; // Number of times to chain to nearby enemies
+  chainDragonMode: boolean; // T3: Spawn blue dragon at last chain target
   fireRateMultiplier: number; // Multiply fire rate (1.0 = normal)
   homingStrength: number; // 0-1, how strongly projectiles home
   homingSpeedBoost: number; // Speed multiplier for homing missiles (1.0 = normal)
+  homingCloneMode: boolean; // T3: Spawn player clone that attacks enemies
   directionalMode: boolean; // Fire in 360° burst
   directionalCount: number; // Number of projectiles in directional burst (default 4)
   directionalNovaMode: boolean; // T3: Expanding ring with trails

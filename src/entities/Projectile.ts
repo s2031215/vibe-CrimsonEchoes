@@ -36,6 +36,14 @@ export class Projectile {
       orbitSpeed: 0,
       orbitDuration: 0,
       orbitTimer: 0,
+      ignoreLifetime: false,
+      isSpiralFlight: false,
+      spiralCenter: undefined,
+      spiralAngle: 0,
+      spiralAngularVelocity: 0,
+      spiralGrowthRate: 0,
+      spiralStartRadius: 0,
+      spiralDirection: 1,
     };
 
     this.container = new Container();
@@ -92,6 +100,11 @@ export class Projectile {
     this.container.visible = false;
     this.state.trailPositions = [];
     this.trailGraphics.clear();
+    
+    // Reset spiral properties
+    this.state.isSpiralFlight = false;
+    this.state.spiralCenter = undefined;
+    this.state.spiralAngle = 0;
   }
 
   /** Update projectile state */
@@ -102,11 +115,30 @@ export class Projectile {
   ): boolean {
     if (!this.state.active) return false;
 
-    // Update lifetime
-    this.state.lifetime -= dt;
-    if (this.state.lifetime <= 0) {
-      this.deactivate();
-      return false;
+    // Update lifetime - check camera-relative bounds if ignoreLifetime is enabled
+    if (this.state.ignoreLifetime) {
+      // Check if projectile has left the camera viewport
+      // Viewport is 480x270, so check if projectile is outside camera view
+      if (playerPos) {
+        const halfViewportWidth = GAME_CONFIG.WIDTH / 2;
+        const halfViewportHeight = GAME_CONFIG.HEIGHT / 2;
+        const margin = 50; // Extra margin for smooth despawn
+        
+        const dx = Math.abs(this.state.position.x - playerPos.x);
+        const dy = Math.abs(this.state.position.y - playerPos.y);
+        
+        if (dx > halfViewportWidth + margin || dy > halfViewportHeight + margin) {
+          this.deactivate();
+          return false;
+        }
+      }
+    } else {
+      // Normal lifetime behavior
+      this.state.lifetime -= dt;
+      if (this.state.lifetime <= 0) {
+        this.deactivate();
+        return false;
+      }
     }
 
     // Update trail positions if trail is enabled
@@ -179,6 +211,47 @@ export class Projectile {
           return true;
         }
       }
+    }
+
+    // ARCHIMEDEAN SPIRAL FLIGHT - Projectile curves around center in expanding spiral
+    if (this.state.isSpiralFlight && this.state.spiralCenter) {
+      // Update spiral center to follow player
+      if (playerPos) {
+        this.state.spiralCenter = { x: playerPos.x, y: playerPos.y };
+      }
+
+      // Update spiral angle over time
+      this.state.spiralAngle += this.state.spiralAngularVelocity * this.state.spiralDirection * dt;
+      
+      // Calculate radius based on Archimedean spiral formula: r = r₀ + k * θ
+      const currentRadius = this.state.spiralStartRadius + 
+                            (this.state.spiralGrowthRate * Math.abs(this.state.spiralAngle));
+      
+      // Update position in polar coordinates
+      this.state.position.x = this.state.spiralCenter.x + 
+                              Math.cos(this.state.spiralAngle) * currentRadius;
+      this.state.position.y = this.state.spiralCenter.y + 
+                              Math.sin(this.state.spiralAngle) * currentRadius;
+      
+      // Calculate velocity for trail effect and rotation
+      // Derivative of spiral: velocity has both radial and tangential components
+      const radialVelocity = this.state.spiralGrowthRate * this.state.spiralAngularVelocity;
+      const tangentialVelocity = currentRadius * this.state.spiralAngularVelocity;
+      
+      // Velocity in polar to cartesian
+      const radialX = Math.cos(this.state.spiralAngle);
+      const radialY = Math.sin(this.state.spiralAngle);
+      const tangentX = -radialY * this.state.spiralDirection;
+      const tangentY = radialX * this.state.spiralDirection;
+      
+      this.state.velocity.x = radialX * radialVelocity + tangentX * tangentialVelocity;
+      this.state.velocity.y = radialY * radialVelocity + tangentY * tangentialVelocity;
+      
+      // Update rotation to match movement direction
+      this.graphics.rotation = Math.atan2(this.state.velocity.y, this.state.velocity.x) + Math.PI / 2;
+      
+      this.updatePosition();
+      return true;
     }
 
     // Homing behavior (only when not orbiting)
@@ -264,9 +337,35 @@ export class Projectile {
     this.state.orbitSpeed = 0;
     this.state.orbitDuration = 0;
     this.state.orbitTimer = 0;
+    this.state.ignoreLifetime = false;
+    this.state.isSpiralFlight = false;
+    this.state.spiralCenter = undefined;
+    this.state.spiralAngle = 0;
+    this.state.spiralAngularVelocity = 0;
+    this.state.spiralGrowthRate = 0;
+    this.state.spiralStartRadius = 0;
+    this.state.spiralDirection = 1;
     this.container.visible = false;
     this.graphics.scale.set(1, 1); // Reset scale
     this.trailGraphics.clear();
+  }
+
+  /** Enable Archimedean spiral flight path */
+  enableSpiralFlight(
+    center: { x: number; y: number },
+    startAngle: number,
+    startRadius: number,
+    angularVelocity: number,
+    growthRate: number,
+    direction: number
+  ): void {
+    this.state.isSpiralFlight = true;
+    this.state.spiralCenter = { x: center.x, y: center.y };
+    this.state.spiralAngle = startAngle;
+    this.state.spiralStartRadius = startRadius;
+    this.state.spiralAngularVelocity = angularVelocity;
+    this.state.spiralGrowthRate = growthRate;
+    this.state.spiralDirection = direction;
   }
 
   /** Mark that this projectile hit an enemy (for pierce tracking) */

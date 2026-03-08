@@ -59,18 +59,20 @@ export const GAME_CONFIG = {
 
   // Weapon Upgrades
   UPGRADES: {
-    MULTI_SHOT_COUNT: 3, // Number of projectiles in multi-shot
-    MULTI_SHOT_SPREAD: 30, // Degrees of spread
+    SHOTGUN_SPREAD: 30, // Degrees of spread for T1-T2 shotgun
+    SHOTGUN_WAVE_SPREAD: 120, // Degrees of spread for T3 shotgun wave
     PIERCE_COUNT: 3, // How many enemies to pierce
     SPLIT_COUNT: 2, // Number of split projectiles
     CHAIN_COUNT: 3, // Number of chain bounces
     CHAIN_RANGE: 100, // Range to find chain targets
     EXPLOSION_RADIUS: 30, // Explosion AoE radius
     EXPLOSION_DAMAGE_MULT: 0.5, // Explosion damage multiplier
+    METEORITE_RADIUS: 60, // Meteorite damage area radius
+    METEORITE_TICK_RATE: 0.5, // Damage tick rate (seconds)
     FIRE_RATE_BOOST: 0.5, // +50% fire rate
     HOMING_STRENGTH: 0.8, // Homing turn rate (0-1)
     HOMING_TURN_SPEED: 180, // Degrees per second
-    SHOTGUN_COUNT: 8, // Number of projectiles in shotgun blast
+    DIRECTIONAL_COUNT: 8, // Number of projectiles in directional blast
   },
 
   // Boss

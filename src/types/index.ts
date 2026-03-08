@@ -37,6 +37,15 @@ export interface ProjectileState extends EntityState {
   chainCount: number; // Number of chains left
   homingStrength: number; // 0 = no homing, 1 = full homing
   targetEnemy: { x: number; y: number } | undefined; // Current homing target
+  hasTrail: boolean; // Show trailing particle effect
+  trailPositions: Vec2[]; // Previous positions for trail rendering
+  isOrbiting: boolean; // Orbits around origin point like a solar system
+  orbitCenter: Vec2 | undefined; // Center point to orbit around
+  orbitAngle: number; // Current angle in orbit (radians)
+  orbitRadius: number; // Distance from orbit center
+  orbitSpeed: number; // Angular velocity (radians per second)
+  orbitDuration: number; // How long to orbit before flying away
+  orbitTimer: number; // Time spent orbiting
 }
 
 /** Enemy state */
@@ -89,7 +98,10 @@ export interface Upgrade {
 
 /** Weapon upgrade stats */
 export interface WeaponStats {
-  multiShot: number; // Number of projectiles per shot (default 1)
+  shotgunCount: number; // Number of projectiles per shot (spread pattern, default 1)
+  shotgunWaveMode: boolean; // T3: 120° wave instead of narrow spread (deprecated, use lineWaveMode)
+  shotgunLineWaveMode: boolean; // T3: Line wave attack
+  shotgunWavePierce: number; // T3: Pierce count for wave projectiles (0 = no pierce)
   pierceCount: number; // How many enemies to pierce through
   piercingSizeBoost: number; // Projectile size multiplier for piercing (1.0 = normal)
   piercingSpeedPenalty: number; // Speed multiplier for piercing (1.0 = normal, 0.7 = 30% slower)
@@ -97,12 +109,20 @@ export interface WeaponStats {
   splitOnHit: boolean; // Split into multiple projectiles on hit
   splitCount: number; // Number of split projectiles (default 2)
   explosiveRadius: number; // Explosion radius on impact (0 = no explosion)
+  meteoriteMode: boolean; // T3: Spawn random meteorites around player
+  meteoriteDuration: number; // Duration of meteorite damage area (seconds)
+  meteoriteCount: number; // Number of meteorites to spawn per fire
+  meteoriteSpawnRadius: number; // Radius around player to spawn meteorites
   chainCount: number; // Number of times to chain to nearby enemies
   fireRateMultiplier: number; // Multiply fire rate (1.0 = normal)
   homingStrength: number; // 0-1, how strongly projectiles home
   homingSpeedBoost: number; // Speed multiplier for homing missiles (1.0 = normal)
-  shotgunMode: boolean; // Fire in 360° burst
-  shotgunCount: number; // Number of projectiles in shotgun burst (default 4)
+  directionalMode: boolean; // Fire in 360° burst
+  directionalCount: number; // Number of projectiles in directional burst (default 4)
+  directionalNovaMode: boolean; // T3: Expanding ring with trails
+  directionalNovaSpawnRadius: number; // T3: Radius to spawn nova projectiles around player
+  directionalNovaOrbitDuration: number; // T3: How long projectiles orbit before flying away (seconds)
+  directionalNovaOrbitSpeed: number; // T3: Angular velocity for orbiting (radians/sec)
 }
 
 /** Result type for expected failures */

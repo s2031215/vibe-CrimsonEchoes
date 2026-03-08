@@ -2,10 +2,11 @@
 // Echo System - Auto-firing projectiles
 // =============================================================================
 
-import { Container } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { GAME_CONFIG } from "@game/GameConfig";
 import { Projectile } from "@entities/Projectile";
 import { LaserBeam } from "@entities/LaserBeam";
+import { Meteorite } from "@entities/Meteorite";
 import { Enemy } from "@entities/Enemy";
 import { Boss } from "@entities/Boss";
 import { ObjectPool } from "@utils/pool";
@@ -15,8 +16,11 @@ import type { Vec2, WeaponStats } from "@/types";
 export class EchoSystem {
   private projectilePool: ObjectPool<Projectile>;
   private laserBeamPool: ObjectPool<LaserBeam>;
+  private meteoritePool: ObjectPool<Meteorite>;
   private container: Container;
   private fireTimer: number = 0;
+  private waveConnectorGraphics: Graphics;
+  private activeWaves: Projectile[][] = []; // Track each wave separately
 
   // Upgradable Stats
   public stats = {
@@ -27,7 +31,10 @@ export class EchoSystem {
 
   // Weapon Upgrades
   public weaponStats: WeaponStats = {
-    multiShot: 1,
+    shotgunCount: 1,
+    shotgunWaveMode: false,
+    shotgunLineWaveMode: false,
+    shotgunWavePierce: 0,
     pierceCount: 0,
     piercingSizeBoost: 1.0,
     piercingSpeedPenalty: 1.0,
@@ -35,12 +42,20 @@ export class EchoSystem {
     splitOnHit: false,
     splitCount: 2,
     explosiveRadius: 0,
+    meteoriteMode: false,
+    meteoriteDuration: 3.0,
+    meteoriteCount: 2,
+    meteoriteSpawnRadius: 150,
     chainCount: 0,
     fireRateMultiplier: 1.0,
     homingStrength: 0,
     homingSpeedBoost: 1.0,
-    shotgunMode: false,
-    shotgunCount: 4,
+    directionalMode: false,
+    directionalCount: 4,
+    directionalNovaMode: false,
+    directionalNovaSpawnRadius: 40,
+    directionalNovaOrbitDuration: 1.5,
+    directionalNovaOrbitSpeed: Math.PI * 2,
   };
 
   private get fireCooldown(): number {
@@ -50,6 +65,10 @@ export class EchoSystem {
   constructor(parentContainer: Container) {
     this.container = new Container();
     parentContainer.addChild(this.container);
+
+    // Initialize wave connector graphics
+    this.waveConnectorGraphics = new Graphics();
+    this.container.addChild(this.waveConnectorGraphics);
 
     // Initialize projectile pool
     this.projectilePool = new ObjectPool<Projectile>(
@@ -74,6 +93,18 @@ export class EchoSystem {
       5, // Initial pool size
       20 // Max 20 laser beams
     );
+
+    // Initialize meteorite pool (for Explosive T3)
+    this.meteoritePool = new ObjectPool<Meteorite>(
+      () => {
+        const meteorite = new Meteorite();
+        this.container.addChild(meteorite.container);
+        return meteorite;
+      },
+      (meteorite) => meteorite.reset(),
+      5, // Initial pool size
+      10 // Max 10 meteorites
+    );
   }
 
   /** Update echo system - fire projectiles/lasers and update existing ones */
@@ -87,6 +118,11 @@ export class EchoSystem {
 
       if (nearestEnemy) {
         this.fireAtTarget(playerPos, nearestEnemy.state.position);
+        
+        // Spawn meteorites around player if meteorite mode is active
+        if (this.weaponStats.meteoriteMode) {
+          this.spawnRandomMeteorites(playerPos);
+        }
       }
 
       this.fireTimer = this.fireCooldown;
@@ -101,7 +137,8 @@ export class EchoSystem {
         nearestEnemy = nearest ? nearest.state.position : undefined;
       }
 
-      if (!proj.update(dt, nearestEnemy)) {
+      // Pass player position for orbiting projectiles
+      if (!proj.update(dt, nearestEnemy, playerPos)) {
         this.projectilePool.release(proj);
       }
     }
@@ -111,6 +148,60 @@ export class EchoSystem {
       const expired = beam.update(dt);
       if (expired && !beam.container.visible) {
         this.laserBeamPool.release(beam);
+      }
+    }
+
+    // Update all active meteorites
+    for (const meteorite of this.meteoritePool.getActive()) {
+      const expired = meteorite.update(dt);
+      if (expired && !meteorite.container.visible) {
+        this.meteoritePool.release(meteorite);
+      }
+    }
+
+    // Remove inactive waves and filter out inactive projectiles from each wave
+    this.activeWaves = this.activeWaves
+      .map(wave => wave.filter(p => p.state.active))
+      .filter(wave => wave.length > 0);
+
+    // Draw connectors between wave projectiles
+    this.drawWaveConnectors();
+  }
+
+  /** Draw visual connectors between wave projectiles */
+  private drawWaveConnectors(): void {
+    this.waveConnectorGraphics.clear();
+
+    // Draw each wave separately (don't connect different waves)
+    for (const wave of this.activeWaves) {
+      if (wave.length < 2) continue;
+
+      // Draw lines connecting adjacent projectiles within this wave only
+      for (let i = 0; i < wave.length - 1; i++) {
+        const p1 = wave[i];
+        const p2 = wave[i + 1];
+
+        if (!p1 || !p2 || !p1.state.active || !p2.state.active) continue;
+
+        const x1 = p1.state.position.x;
+        const y1 = p1.state.position.y;
+        const x2 = p2.state.position.x;
+        const y2 = p2.state.position.y;
+
+        // Outer glow
+        this.waveConnectorGraphics.moveTo(x1, y1);
+        this.waveConnectorGraphics.lineTo(x2, y2);
+        this.waveConnectorGraphics.stroke({ width: 8, color: 0xFF00FF, alpha: 0.3 });
+
+        // Middle layer
+        this.waveConnectorGraphics.moveTo(x1, y1);
+        this.waveConnectorGraphics.lineTo(x2, y2);
+        this.waveConnectorGraphics.stroke({ width: 4, color: 0xFF00FF, alpha: 0.6 });
+
+        // Core line
+        this.waveConnectorGraphics.moveTo(x1, y1);
+        this.waveConnectorGraphics.lineTo(x2, y2);
+        this.waveConnectorGraphics.stroke({ width: 2, color: 0xFFFFFF, alpha: 0.8 });
       }
     }
   }
@@ -162,18 +253,16 @@ export class EchoSystem {
     speed *= this.weaponStats.piercingSpeedPenalty; // Piercing makes slower
     speed *= this.weaponStats.homingSpeedBoost; // Homing makes faster
 
-    // Calculate total projectile count (multiplicative)
-    let totalCount = this.weaponStats.multiShot;
-    let isShotgunPattern = false;
-
-    // If shotgun mode is active, multiply the counts
-    if (this.weaponStats.shotgunMode) {
-      totalCount = this.weaponStats.multiShot * this.weaponStats.shotgunCount;
-      isShotgunPattern = true;
-    }
-
-    // Shotgun pattern - fire in 360° pattern
-    if (isShotgunPattern) {
+    // DIRECTIONAL MODE: 360° burst pattern
+    if (this.weaponStats.directionalMode) {
+      // T3: Nova Burst - Expanding ring with trails
+      if (this.weaponStats.directionalNovaMode) {
+        this.fireNovaBurst(from, speed);
+        return;
+      }
+      
+      // T1-T2: Regular directional burst
+      const totalCount = this.weaponStats.directionalCount;
       const angleStep = (Math.PI * 2) / totalCount;
 
       for (let i = 0; i < totalCount; i++) {
@@ -185,14 +274,60 @@ export class EchoSystem {
       return;
     }
 
-    // Multi-shot mode - fire multiple projectiles in spread
-    if (totalCount > 1) {
-      const spreadRadians = (GAME_CONFIG.UPGRADES.MULTI_SHOT_SPREAD * Math.PI) / 180;
+    // SHOTGUN MODE: Spread pattern or Line Wave
+    const shotgunCount = this.weaponStats.shotgunCount;
+    if (shotgunCount > 1) {
+      // T3: Line Wave Mode - Creates a continuous 120° curved wave of piercing projectiles
+      if (this.weaponStats.shotgunLineWaveMode) {
+        // Create a new wave array for this shot
+        const currentWave: Projectile[] = [];
+
+        const baseAngle = Math.atan2(direction.y, direction.x);
+        const arcRadians = (120 * Math.PI) / 180; // 120-degree arc
+        const arcRadius = 80; // Radius of the curved arc formation
+        const startDistance = -50; // Start behind player (negative = behind)
+        
+        // Create projectiles along a curved arc facing the aim direction
+        for (let i = 0; i < shotgunCount; i++) {
+          // Map i to parameter t (0 to 1)
+          const t = i / (shotgunCount - 1 || 1); // Avoid division by zero
+          
+          // Calculate angle along the arc, centered on aim direction
+          // Arc ranges from -60° to +60° relative to aim direction
+          const curveAngle = baseAngle + (t - 0.5) * arcRadians;
+          
+          // Position projectile along the curved arc
+          const offsetX = Math.cos(curveAngle) * arcRadius;
+          const offsetY = Math.sin(curveAngle) * arcRadius;
+          
+          // Move starting position back behind the player
+          const backwardX = Math.cos(baseAngle) * startDistance;
+          const backwardY = Math.sin(baseAngle) * startDistance;
+          
+          const startX = from.x + offsetX + backwardX;
+          const startY = from.y + offsetY + backwardY;
+          
+          // All projectiles move in the SAME direction (parallel to aim)
+          const vx = direction.x * speed;
+          const vy = direction.y * speed;
+          
+          this.spawnWaveProjectile(startX, startY, vx, vy, currentWave);
+        }
+
+        // Add this wave to the active waves list
+        this.activeWaves.push(currentWave);
+        return;
+      }
+      
+      // T1-T2: Regular spread pattern
+      const spreadRadians = this.weaponStats.shotgunWaveMode 
+        ? (120 * Math.PI) / 180  // Old T3 mode (deprecated)
+        : (GAME_CONFIG.UPGRADES.SHOTGUN_SPREAD * Math.PI) / 180; // T1-T2: 30° narrow spread
       const baseAngle = Math.atan2(direction.y, direction.x);
 
-      for (let i = 0; i < totalCount; i++) {
+      for (let i = 0; i < shotgunCount; i++) {
         // Spread projectiles evenly
-        const offset = (i - (totalCount - 1) / 2) * (spreadRadians / (totalCount - 1 || 1));
+        const offset = (i - (shotgunCount - 1) / 2) * (spreadRadians / (shotgunCount - 1 || 1));
         const angle = baseAngle + offset;
         const vx = Math.cos(angle) * speed;
         const vy = Math.sin(angle) * speed;
@@ -209,18 +344,9 @@ export class EchoSystem {
     const direction = normalize(subtract(to, from));
     const laserLength = 2000; // Very long laser like boss
     
-    // Calculate total laser count (multiplicative)
-    let totalCount = this.weaponStats.multiShot;
-    let isShotgunPattern = false;
-
-    // If shotgun mode is active, multiply the counts
-    if (this.weaponStats.shotgunMode) {
-      totalCount = this.weaponStats.multiShot * this.weaponStats.shotgunCount;
-      isShotgunPattern = true;
-    }
-
-    // Shotgun pattern - fire laser beams in 360° pattern
-    if (isShotgunPattern) {
+    // DIRECTIONAL MODE: 360° burst pattern
+    if (this.weaponStats.directionalMode) {
+      const totalCount = this.weaponStats.directionalCount;
       const angleStep = (Math.PI * 2) / totalCount;
 
       for (let i = 0; i < totalCount; i++) {
@@ -232,14 +358,17 @@ export class EchoSystem {
       return;
     }
 
-    // Multi-shot mode - fire multiple laser beams in spread
-    if (totalCount > 1) {
-      const spreadRadians = (GAME_CONFIG.UPGRADES.MULTI_SHOT_SPREAD * Math.PI) / 180;
+    // SHOTGUN MODE: Spread laser beams
+    const shotgunCount = this.weaponStats.shotgunCount;
+    if (shotgunCount > 1) {
+      const spreadRadians = this.weaponStats.shotgunWaveMode 
+        ? (120 * Math.PI) / 180  // T3: 120° wave
+        : (GAME_CONFIG.UPGRADES.SHOTGUN_SPREAD * Math.PI) / 180; // T1-T2: 30° narrow spread
       const baseAngle = Math.atan2(direction.y, direction.x);
 
-      for (let i = 0; i < totalCount; i++) {
+      for (let i = 0; i < shotgunCount; i++) {
         // Spread laser beams evenly
-        const offset = (i - (totalCount - 1) / 2) * (spreadRadians / (totalCount - 1 || 1));
+        const offset = (i - (shotgunCount - 1) / 2) * (spreadRadians / (shotgunCount - 1 || 1));
         const angle = baseAngle + offset;
         const endX = from.x + Math.cos(angle) * laserLength;
         const endY = from.y + Math.sin(angle) * laserLength;
@@ -281,12 +410,94 @@ export class EchoSystem {
     );
   }
 
+  /** Spawn a wave projectile with infinite pierce for T3 shotgun */
+  private spawnWaveProjectile(x: number, y: number, vx: number, vy: number, wave: Projectile[]): void {
+    const proj = this.projectilePool.acquire();
+
+    proj.activate(x, y, vx, vy, this.stats.damage);
+
+    // Apply weapon upgrades with infinite pierce for wave
+    proj.setUpgradeProperties(
+      999, // Infinite pierce for continuous wave effect
+      this.weaponStats.splitOnHit,
+      this.weaponStats.explosiveRadius > 0,
+      this.weaponStats.chainCount > 0,
+      this.weaponStats.chainCount,
+      this.weaponStats.homingStrength,
+      this.weaponStats.piercingSizeBoost
+    );
+
+    // Hide individual projectile graphics (only show wave connectors)
+    proj.container.visible = false;
+
+    // Add this projectile to the current wave
+    wave.push(proj);
+  }
+
+  /** Fire nova burst - expanding ring with trails (Directional T3) */
+  private fireNovaBurst(from: Vec2, speed: number): void {
+    const totalCount = this.weaponStats.directionalCount;
+    const angleStep = (Math.PI * 2) / totalCount;
+    const spawnRadius = this.weaponStats.directionalNovaSpawnRadius;
+
+    for (let i = 0; i < totalCount; i++) {
+      const angle = angleStep * i;
+      
+      // Spawn projectile at a distance from player center (in a ring)
+      const spawnX = from.x + Math.cos(angle) * spawnRadius;
+      const spawnY = from.y + Math.sin(angle) * spawnRadius;
+      
+      // Velocity points outward from player center
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+      
+      this.spawnNovaProjectile(from, spawnX, spawnY, angle, vx, vy);
+    }
+  }
+
+  /** Spawn a nova projectile with trail effects and orbital behavior */
+  private spawnNovaProjectile(
+    center: Vec2,
+    x: number,
+    y: number,
+    angle: number,
+    vx: number,
+    vy: number
+  ): void {
+    const proj = this.projectilePool.acquire();
+
+    proj.activate(x, y, vx, vy, this.stats.damage);
+
+    // Apply weapon upgrades (normal properties, no special damage)
+    proj.setUpgradeProperties(
+      this.weaponStats.pierceCount,
+      this.weaponStats.splitOnHit,
+      this.weaponStats.explosiveRadius > 0,
+      this.weaponStats.chainCount > 0,
+      this.weaponStats.chainCount,
+      this.weaponStats.homingStrength,
+      this.weaponStats.piercingSizeBoost
+    );
+
+    // Enable trail effect
+    proj.state.hasTrail = true;
+
+    // Enable orbital behavior (solar system style)
+    proj.state.isOrbiting = true;
+    proj.state.orbitCenter = { x: center.x, y: center.y };
+    proj.state.orbitAngle = angle;
+    proj.state.orbitRadius = this.weaponStats.directionalNovaSpawnRadius;
+    proj.state.orbitSpeed = this.weaponStats.directionalNovaOrbitSpeed;
+    proj.state.orbitDuration = this.weaponStats.directionalNovaOrbitDuration;
+    proj.state.orbitTimer = 0;
+  }
+
   /** Spawn split projectiles from a hit */
   spawnSplitProjectiles(fromPos: Vec2): void {
     if (!this.weaponStats.splitOnHit) return;
 
-    // Split count multiplies with multi-shot
-    const totalSplits = this.weaponStats.splitCount * this.weaponStats.multiShot;
+    // Split count multiplies with shotgun count
+    const totalSplits = this.weaponStats.splitCount * this.weaponStats.shotgunCount;
     const speed = this.stats.speed * 0.7; // Slower than main projectiles
 
     // Fire in random directions
@@ -348,6 +559,38 @@ export class EchoSystem {
     return this.laserBeamPool.getActive();
   }
 
+  /** Get all active meteorites for collision detection */
+  getActiveMeteorites(): ReadonlySet<Meteorite> {
+    return this.meteoritePool.getActive();
+  }
+
+  /** Spawn a meteorite at position */
+  spawnMeteorite(pos: Vec2, radius: number, damage: number, duration: number): void {
+    const meteorite = this.meteoritePool.acquire();
+    meteorite.activate(pos, radius, damage, duration);
+  }
+
+  /** Spawn random meteorites around player position */
+  private spawnRandomMeteorites(playerPos: Vec2): void {
+    const count = this.weaponStats.meteoriteCount;
+    const spawnRadius = this.weaponStats.meteoriteSpawnRadius;
+    const radius = this.weaponStats.explosiveRadius;
+    const damage = this.stats.damage * GAME_CONFIG.UPGRADES.EXPLOSION_DAMAGE_MULT;
+    const duration = this.weaponStats.meteoriteDuration;
+
+    for (let i = 0; i < count; i++) {
+      // Random angle around player
+      const angle = Math.random() * Math.PI * 2;
+      // Random distance from player (50% to 100% of spawn radius)
+      const distance = spawnRadius * (0.5 + Math.random() * 0.5);
+      
+      const x = playerPos.x + Math.cos(angle) * distance;
+      const y = playerPos.y + Math.sin(angle) * distance;
+      
+      this.spawnMeteorite({ x, y }, radius, damage, duration);
+    }
+  }
+
   /** Release a projectile back to pool */
   releaseProjectile(proj: Projectile): void {
     this.projectilePool.release(proj);
@@ -362,7 +605,10 @@ export class EchoSystem {
   reset(): void {
     this.projectilePool.releaseAll();
     this.laserBeamPool.releaseAll();
+    this.meteoritePool.releaseAll();
     this.fireTimer = 0;
+    this.activeWaves = [];
+    this.waveConnectorGraphics.clear();
     
     // Reset stats to default values
     this.stats.damage = GAME_CONFIG.CRIMSON_SHOT.DAMAGE;
@@ -370,7 +616,10 @@ export class EchoSystem {
     this.stats.speed = GAME_CONFIG.CRIMSON_SHOT.PROJECTILE_SPEED;
     
     // Reset weapon upgrades
-    this.weaponStats.multiShot = 1;
+    this.weaponStats.shotgunCount = 1;
+    this.weaponStats.shotgunWaveMode = false;
+    this.weaponStats.shotgunLineWaveMode = false;
+    this.weaponStats.shotgunWavePierce = 0;
     this.weaponStats.pierceCount = 0;
     this.weaponStats.piercingSizeBoost = 1.0;
     this.weaponStats.piercingSpeedPenalty = 1.0;
@@ -378,11 +627,15 @@ export class EchoSystem {
     this.weaponStats.splitOnHit = false;
     this.weaponStats.splitCount = 2;
     this.weaponStats.explosiveRadius = 0;
+    this.weaponStats.meteoriteMode = false;
+    this.weaponStats.meteoriteDuration = 3.0;
+    this.weaponStats.meteoriteCount = 2;
+    this.weaponStats.meteoriteSpawnRadius = 150;
     this.weaponStats.chainCount = 0;
     this.weaponStats.fireRateMultiplier = 1.0;
     this.weaponStats.homingStrength = 0;
     this.weaponStats.homingSpeedBoost = 1.0;
-    this.weaponStats.shotgunMode = false;
-    this.weaponStats.shotgunCount = 4;
+    this.weaponStats.directionalMode = false;
+    this.weaponStats.directionalCount = 4;
   }
 }

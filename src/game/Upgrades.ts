@@ -6,45 +6,46 @@ import type { Upgrade } from "@/types";
 import type { Game } from "@game/Game";
 
 // =============================================================================
-// Multi-Shot Weapon (3 Tiers)
+// Shotgun Weapon (3 Tiers)
 // =============================================================================
 
-const MULTI_SHOT_T1: Upgrade = {
-  id: "multi_shot_t1",
-  name: "Multi-Shot I",
-  description: "Fire 3 projectiles at once",
+const SHOTGUN_T1: Upgrade = {
+  id: "shotgun_t1",
+  name: "Shotgun I",
+  description: "Fire 3 projectiles in a spread",
   type: "weapon",
-  weaponId: "multi_shot",
+  weaponId: "shotgun",
   tier: 1,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.multiShot = 3;
-    game["weaponTiers"].set("multi_shot", 1);
+    game["echoSystem"].weaponStats.shotgunCount = 3;
+    game["weaponTiers"].set("shotgun", 1);
   },
 };
 
-const MULTI_SHOT_T2: Upgrade = {
-  id: "multi_shot_t2",
-  name: "Multi-Shot II",
-  description: "Fire 5 projectiles at once",
+const SHOTGUN_T2: Upgrade = {
+  id: "shotgun_t2",
+  name: "Shotgun II",
+  description: "Fire 5 projectiles in a spread",
   type: "weapon",
-  weaponId: "multi_shot",
+  weaponId: "shotgun",
   tier: 2,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.multiShot = 5;
-    game["weaponTiers"].set("multi_shot", 2);
+    game["echoSystem"].weaponStats.shotgunCount = 5;
+    game["weaponTiers"].set("shotgun", 2);
   },
 };
 
-const MULTI_SHOT_T3: Upgrade = {
-  id: "multi_shot_t3",
-  name: "Multi-Shot III",
-  description: "Fire 7 projectiles at once",
+const SHOTGUN_T3: Upgrade = {
+  id: "shotgun_t3",
+  name: "Crimson Wave",
+  description: "120° curved wave with infinite pierce",
   type: "weapon",
-  weaponId: "multi_shot",
+  weaponId: "shotgun",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.multiShot = 7;
-    game["weaponTiers"].set("multi_shot", 3);
+    game["echoSystem"].weaponStats.shotgunCount = 20; // More projectiles for continuous wave
+    game["echoSystem"].weaponStats.shotgunLineWaveMode = true; // 120° curved wave attack
+    game["weaponTiers"].set("shotgun", 3);
   },
 };
 
@@ -205,25 +206,29 @@ const EXPLOSIVE_T1: Upgrade = {
 const EXPLOSIVE_T2: Upgrade = {
   id: "explosive_t2",
   name: "Explosive Rounds II",
-  description: "Medium explosion on impact",
+  description: "Large explosion on impact",
   type: "weapon",
   weaponId: "explosive_rounds",
   tier: 2,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.explosiveRadius = 30;
+    game["echoSystem"].weaponStats.explosiveRadius = 50;
     game["weaponTiers"].set("explosive_rounds", 2);
   },
 };
 
 const EXPLOSIVE_T3: Upgrade = {
   id: "explosive_t3",
-  name: "Explosive Rounds III",
-  description: "Large explosion on impact",
+  name: "Explosive Rounds III - Meteor Storm",
+  description: "Explosions + random meteorites around player",
   type: "weapon",
   weaponId: "explosive_rounds",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.explosiveRadius = 50;
+    game["echoSystem"].weaponStats.explosiveRadius = 60;
+    game["echoSystem"].weaponStats.meteoriteMode = true; // Enable meteorite spawning
+    game["echoSystem"].weaponStats.meteoriteDuration = 3.0; // 3 seconds of lingering damage
+    game["echoSystem"].weaponStats.meteoriteCount = 2; // Spawn 2 meteorites per fire
+    game["echoSystem"].weaponStats.meteoriteSpawnRadius = 150; // Spawn within 150px of player
     game["weaponTiers"].set("explosive_rounds", 3);
   },
 };
@@ -275,46 +280,50 @@ const HOMING_T3: Upgrade = {
 };
 
 // =============================================================================
-// Shotgun Blast Weapon (3 Tiers)
+// Directional Shot Weapon (3 Tiers) - Forward-firing burst
 // =============================================================================
 
-const SHOTGUN_T1: Upgrade = {
-  id: "shotgun_t1",
-  name: "Shotgun Blast I",
+const DIRECTIONAL_SHOT_T1: Upgrade = {
+  id: "directional_shot_t1",
+  name: "Directional Shot I",
   description: "Fire 4 projectiles in 360°",
   type: "weapon",
-  weaponId: "shotgun_blast",
+  weaponId: "directional_shot",
   tier: 1,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.shotgunMode = true;
-    game["echoSystem"].weaponStats.shotgunCount = 4;
-    game["weaponTiers"].set("shotgun_blast", 1);
+    game["echoSystem"].weaponStats.directionalMode = true;
+    game["echoSystem"].weaponStats.directionalCount = 4;
+    game["weaponTiers"].set("directional_shot", 1);
   },
 };
 
-const SHOTGUN_T2: Upgrade = {
-  id: "shotgun_t2",
-  name: "Shotgun Blast II",
-  description: "Fire 6 projectiles in 360°",
-  type: "weapon",
-  weaponId: "shotgun_blast",
-  tier: 2,
-  apply: (game: Game) => {
-    game["echoSystem"].weaponStats.shotgunCount = 6;
-    game["weaponTiers"].set("shotgun_blast", 2);
-  },
-};
-
-const SHOTGUN_T3: Upgrade = {
-  id: "shotgun_t3",
-  name: "Shotgun Blast III",
+const DIRECTIONAL_SHOT_T2: Upgrade = {
+  id: "directional_shot_t2",
+  name: "Directional Shot II",
   description: "Fire 8 projectiles in 360°",
   type: "weapon",
-  weaponId: "shotgun_blast",
+  weaponId: "directional_shot",
+  tier: 2,
+  apply: (game: Game) => {
+    game["echoSystem"].weaponStats.directionalCount = 8;
+    game["weaponTiers"].set("directional_shot", 2);
+  },
+};
+
+const DIRECTIONAL_SHOT_T3: Upgrade = {
+  id: "directional_shot_t3",
+  name: "Orbital Nova",
+  description: "8 projectiles orbit like a solar system before flying away",
+  type: "weapon",
+  weaponId: "directional_shot",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.shotgunCount = 8;
-    game["weaponTiers"].set("shotgun_blast", 3);
+    game["echoSystem"].weaponStats.directionalCount = 8;
+    game["echoSystem"].weaponStats.directionalNovaMode = true;
+    game["echoSystem"].weaponStats.directionalNovaSpawnRadius = 40;
+    game["echoSystem"].weaponStats.directionalNovaOrbitDuration = 1.5; // 1.5 seconds orbit
+    game["echoSystem"].weaponStats.directionalNovaOrbitSpeed = Math.PI * 2; // Full rotation per second
+    game["weaponTiers"].set("directional_shot", 3);
   },
 };
 
@@ -377,24 +386,24 @@ const HEAL: Upgrade = {
 
 /** All weapon base upgrades (tier 1) */
 export const BASE_WEAPON_UPGRADES: Upgrade[] = [
-  MULTI_SHOT_T1,
+  SHOTGUN_T1,
   PIERCING_T1,
   SPLIT_SHOT_T1,
   CHAIN_T1,
   EXPLOSIVE_T1,
   HOMING_T1,
-  SHOTGUN_T1,
+  DIRECTIONAL_SHOT_T1,
 ];
 
 /** Weapon tier upgrade map: weaponId -> [tier1, tier2, tier3] */
 export const WEAPON_TIER_UPGRADES: Map<string, [Upgrade, Upgrade, Upgrade]> = new Map([
-  ["multi_shot", [MULTI_SHOT_T1, MULTI_SHOT_T2, MULTI_SHOT_T3]],
+  ["shotgun", [SHOTGUN_T1, SHOTGUN_T2, SHOTGUN_T3]],
   ["piercing_rounds", [PIERCING_T1, PIERCING_T2, PIERCING_T3]],
   ["split_shot", [SPLIT_SHOT_T1, SPLIT_SHOT_T2, SPLIT_SHOT_T3]],
   ["chain_lightning", [CHAIN_T1, CHAIN_T2, CHAIN_T3]],
   ["explosive_rounds", [EXPLOSIVE_T1, EXPLOSIVE_T2, EXPLOSIVE_T3]],
   ["homing_missiles", [HOMING_T1, HOMING_T2, HOMING_T3]],
-  ["shotgun_blast", [SHOTGUN_T1, SHOTGUN_T2, SHOTGUN_T3]],
+  ["directional_shot", [DIRECTIONAL_SHOT_T1, DIRECTIONAL_SHOT_T2, DIRECTIONAL_SHOT_T3]],
 ]);
 
 /** All stat upgrades (can be taken multiple times) */

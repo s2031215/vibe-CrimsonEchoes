@@ -100,6 +100,10 @@ export class CollisionSystem {
 
           // Handle explosion
           if (proj.state.isExplosive) {
+            // In T3 meteorite mode, we do BOTH: instant explosion on hit + random meteorites spawn around player
+            // The random meteorites are spawned in EchoSystem.update() when firing
+            
+            // Always do instant explosion on hit
             this.createExplosion(
               proj.state.position.x,
               proj.state.position.y,
@@ -179,6 +183,10 @@ export class CollisionSystem {
 
           // Handle explosion
           if (proj.state.isExplosive) {
+            // In T3 meteorite mode, we do BOTH: instant explosion on hit + random meteorites spawn around player
+            // The random meteorites are spawned in EchoSystem.update() when firing
+            
+            // Always do instant explosion on hit
             this.createExplosion(
               proj.state.position.x,
               proj.state.position.y,
@@ -354,6 +362,63 @@ export class CollisionSystem {
           beam.container.visible = false; // Deactivate after hit
 
           if (result.playerDied) return result;
+        }
+      }
+    }
+
+    // Check meteorite vs enemy collisions (lingering damage areas)
+    const meteorites = echoSystem.getActiveMeteorites();
+    for (const meteorite of meteorites) {
+      if (!meteorite.container.visible) continue;
+
+      // Check if it's time to apply damage
+      if (meteorite.shouldApplyDamage()) {
+        // Damage all enemies in radius
+        for (const enemy of enemies) {
+          if (!enemy.state.active) continue;
+
+          const dx = enemy.state.position.x - meteorite.position.x;
+          const dy = enemy.state.position.y - meteorite.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist <= meteorite.radius) {
+            const killed = enemy.takeDamage(meteorite.damage);
+            if (killed) {
+              result.enemiesKilled++;
+              xpSystem.spawnOrb(
+                enemy.state.position.x,
+                enemy.state.position.y,
+                enemy.state.xpValue
+              );
+              spawnSystem.releaseEnemy(enemy);
+            }
+          }
+        }
+
+        // Also check boss
+        if (boss && boss.state.active) {
+          const dx = boss.state.position.x - meteorite.position.x;
+          const dy = boss.state.position.y - meteorite.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist <= meteorite.radius) {
+            const killed = boss.takeDamage(meteorite.damage);
+            if (killed) {
+              result.enemiesKilled++;
+              
+              // Check if this is the final boss (type 2 at 5 minutes)
+              if (boss.bossType === 2) {
+                result.finalBossKilled = true;
+              }
+              
+              xpSystem.spawnOrb(
+                boss.state.position.x,
+                boss.state.position.y,
+                boss.state.xpValue
+              );
+              spawnSystem.releaseBoss(boss);
+            }
+          }
         }
       }
     }

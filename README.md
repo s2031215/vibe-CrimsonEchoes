@@ -21,16 +21,36 @@ Open http://localhost:3000 to play!
 
 ## Game Goal
 
-Survive for 3 minutes while defeating waves of enemies. Collect XP orbs to level up!
+Survive for 6 minutes while defeating waves of enemies. Collect XP orbs to level up!
 
-## Downloading Assets (Optional)
+## Weapons & Upgrades
 
-The game works with placeholder graphics, but for better visuals you can download the free Ninja Adventure asset pack:
+Each weapon has 3 tiers with increasingly powerful transformations:
 
-1. Go to https://pixel-boy.itch.io/ninja-adventure-asset-pack
-2. Download the free asset pack (CC0 license)
-3. Extract to `public/assets/ninja-adventure/`
-4. Update the asset paths in `src/utils/assets.ts`
+### Directional Shot
+- **Tier 1**: 4 projectiles fire in a 360° burst
+- **Tier 2**: 8 projectiles for better coverage
+- **Tier 3 "Orbital Nova"**: 8 projectiles orbit around the player like a solar system, then spiral outward in a swirl pattern with pulsing cyan trails
+
+### Shotgun
+- **Tier 1**: 3 projectiles in a narrow spread
+- **Tier 2**: 5 projectiles in a wider spread
+- **Tier 3 "Crimson Wave"**: 20 projectiles form a curved 120° wave with infinite pierce and connected visual lines
+
+### Piercing Rounds
+- **Tier 1**: Projectiles pierce through 2 enemies
+- **Tier 2**: Pierce through 4 enemies with increased size and reduced speed
+- **Tier 3**: Instant laser beams with infinite pierce
+
+### Explosive Rounds
+- **Tier 1**: Projectiles create small explosions on impact
+- **Tier 2**: Larger explosion radius
+- **Tier 3 "Meteor Storm"**: Explosions + random meteorites spawn around the player
+
+### Additional Weapons
+- **Split Shot**: Projectiles split into multiple on hit
+- **Chain Lightning**: Chains between nearby enemies
+- **Homing Missiles**: Projectiles track enemies
 
 ## Project Structure
 

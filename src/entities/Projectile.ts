@@ -10,6 +10,7 @@ export class Projectile {
   public state: ProjectileState;
   public container: Container;
   private graphics: Graphics;
+  private trailGraphics: Graphics;
 
   constructor() {
     this.state = {
@@ -26,10 +27,21 @@ export class Projectile {
       chainCount: 0,
       homingStrength: 0,
       targetEnemy: undefined,
+      hasTrail: false,
+      trailPositions: [],
+      isOrbiting: false,
+      orbitCenter: undefined,
+      orbitAngle: 0,
+      orbitRadius: 0,
+      orbitSpeed: 0,
+      orbitDuration: 0,
+      orbitTimer: 0,
     };
 
     this.container = new Container();
     this.graphics = this.createProjectileGraphics();
+    this.trailGraphics = new Graphics();
+    this.container.addChild(this.trailGraphics);
     this.container.addChild(this.graphics);
     this.container.visible = false;
   }
@@ -78,10 +90,16 @@ export class Projectile {
   deactivate(): void {
     this.state.active = false;
     this.container.visible = false;
+    this.state.trailPositions = [];
+    this.trailGraphics.clear();
   }
 
   /** Update projectile state */
-  update(dt: number, nearestEnemy: { x: number; y: number } | undefined = undefined): boolean {
+  update(
+    dt: number,
+    nearestEnemy: { x: number; y: number } | undefined = undefined,
+    playerPos: { x: number; y: number } | undefined = undefined
+  ): boolean {
     if (!this.state.active) return false;
 
     // Update lifetime
@@ -91,8 +109,80 @@ export class Projectile {
       return false;
     }
 
-    // Homing behavior
-    if (this.state.homingStrength > 0 && nearestEnemy) {
+    // Update trail positions if trail is enabled
+    if (this.state.hasTrail) {
+      // Add current position to trail
+      this.state.trailPositions.push({ x: this.state.position.x, y: this.state.position.y });
+      
+      // Keep only last 8 positions for trail
+      if (this.state.trailPositions.length > 8) {
+        this.state.trailPositions.shift();
+      }
+      
+      // Draw trail effect
+      this.drawTrail();
+    }
+
+    // ORBITAL BEHAVIOR - Like a solar system
+    if (this.state.isOrbiting) {
+      // Update orbit center to follow player position
+      if (playerPos) {
+        this.state.orbitCenter = { x: playerPos.x, y: playerPos.y };
+      }
+      
+      if (!this.state.orbitCenter) {
+        // Fallback: stop orbiting if no center defined
+        this.state.isOrbiting = false;
+      } else {
+        this.state.orbitTimer += dt;
+
+        // Check if orbit duration is complete
+        if (this.state.orbitTimer >= this.state.orbitDuration) {
+          // Stop orbiting, fly away in a SPIRAL/SWIRL pattern
+          this.state.isOrbiting = false;
+          
+          // Calculate tangent direction (perpendicular to radius) for spiral effect
+          const radialX = this.state.position.x - this.state.orbitCenter.x;
+          const radialY = this.state.position.y - this.state.orbitCenter.y;
+          const dist = Math.sqrt(radialX * radialX + radialY * radialY);
+          
+          if (dist > 0) {
+            // Tangent direction (perpendicular to radial direction)
+            const tangentX = -radialY / dist;
+            const tangentY = radialX / dist;
+            
+            // Radial direction (outward)
+            const radialNormX = radialX / dist;
+            const radialNormY = radialY / dist;
+            
+            // Mix tangent and radial for spiral effect (60% tangent, 40% radial)
+            const speed = Math.sqrt(this.state.velocity.x ** 2 + this.state.velocity.y ** 2);
+            this.state.velocity.x = (tangentX * 0.6 + radialNormX * 0.4) * speed;
+            this.state.velocity.y = (tangentY * 0.6 + radialNormY * 0.4) * speed;
+          }
+        } else {
+          // Continue orbiting around CURRENT player position
+          this.state.orbitAngle += this.state.orbitSpeed * dt;
+          
+          // Update position based on orbit around player
+          this.state.position.x = this.state.orbitCenter.x + Math.cos(this.state.orbitAngle) * this.state.orbitRadius;
+          this.state.position.y = this.state.orbitCenter.y + Math.sin(this.state.orbitAngle) * this.state.orbitRadius;
+          
+          // Update velocity for smooth animation
+          this.state.velocity.x = -Math.sin(this.state.orbitAngle) * this.state.orbitSpeed * this.state.orbitRadius;
+          this.state.velocity.y = Math.cos(this.state.orbitAngle) * this.state.orbitSpeed * this.state.orbitRadius;
+          
+          // Update rotation to match movement direction
+          this.graphics.rotation = Math.atan2(this.state.velocity.y, this.state.velocity.x) + Math.PI / 2;
+          
+          this.updatePosition();
+          return true;
+        }
+      }
+    }
+
+    // Homing behavior (only when not orbiting)
+    if (this.state.homingStrength > 0 && nearestEnemy && !this.state.isOrbiting) {
       const dx = nearestEnemy.x - this.state.position.x;
       const dy = nearestEnemy.y - this.state.position.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -112,9 +202,11 @@ export class Projectile {
       }
     }
 
-    // Update position
-    this.state.position.x += this.state.velocity.x * dt;
-    this.state.position.y += this.state.velocity.y * dt;
+    // Update position (normal movement when not orbiting)
+    if (!this.state.isOrbiting) {
+      this.state.position.x += this.state.velocity.x * dt;
+      this.state.position.y += this.state.velocity.y * dt;
+    }
 
     this.updatePosition();
     return true;
@@ -125,14 +217,56 @@ export class Projectile {
     this.container.y = this.state.position.y;
   }
 
+  /** Draw trail effect behind projectile */
+  private drawTrail(): void {
+    this.trailGraphics.clear();
+
+    if (this.state.trailPositions.length < 2) return;
+
+    // Draw trail with fading particles
+    for (let i = 0; i < this.state.trailPositions.length; i++) {
+      const pos = this.state.trailPositions[i];
+      if (!pos) continue; // Skip if undefined
+      
+      const alpha = (i + 1) / this.state.trailPositions.length; // Fade from old to new
+      const size = 2 + (alpha * 3); // Grow from 2 to 5 pixels
+      
+      // Cyan glow with fading alpha
+      this.trailGraphics.circle(
+        pos.x - this.state.position.x, // Relative to projectile position
+        pos.y - this.state.position.y,
+        size
+      );
+      this.trailGraphics.fill({ color: 0x00ffff, alpha: alpha * 0.6 });
+      
+      // Bright white core
+      this.trailGraphics.circle(
+        pos.x - this.state.position.x,
+        pos.y - this.state.position.y,
+        size * 0.5
+      );
+      this.trailGraphics.fill({ color: 0xffffff, alpha: alpha * 0.8 });
+    }
+  }
+
   /** Reset for pooling */
   reset(): void {
     this.state.active = false;
     this.state.lifetime = 0;
     this.state.pierceCount = 0;
     this.state.targetEnemy = undefined;
+    this.state.hasTrail = false;
+    this.state.trailPositions = [];
+    this.state.isOrbiting = false;
+    this.state.orbitCenter = undefined;
+    this.state.orbitAngle = 0;
+    this.state.orbitRadius = 0;
+    this.state.orbitSpeed = 0;
+    this.state.orbitDuration = 0;
+    this.state.orbitTimer = 0;
     this.container.visible = false;
     this.graphics.scale.set(1, 1); // Reset scale
+    this.trailGraphics.clear();
   }
 
   /** Mark that this projectile hit an enemy (for pierce tracking) */

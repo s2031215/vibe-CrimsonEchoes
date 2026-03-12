@@ -21,6 +21,7 @@ export class Projectile {
       lifetime: GAME_CONFIG.CRIMSON_SHOT.PROJECTILE_LIFETIME,
       pierce: 0,
       pierceCount: 0,
+      lastHitTime: 0,
       canSplit: false,
       isExplosive: false,
       canChain: false,
@@ -327,6 +328,7 @@ export class Projectile {
     this.state.active = false;
     this.state.lifetime = 0;
     this.state.pierceCount = 0;
+    this.state.lastHitTime = 0;
     this.state.targetEnemy = undefined;
     this.state.hasTrail = false;
     this.state.trailPositions = [];
@@ -369,7 +371,8 @@ export class Projectile {
   }
 
   /** Mark that this projectile hit an enemy (for pierce tracking) */
-  markHit(): boolean {
+  markHit(currentTime: number): boolean {
+    this.state.lastHitTime = currentTime;
     this.state.pierceCount++;
     // Return true if projectile should be deactivated
     return this.state.pierceCount > this.state.pierce;

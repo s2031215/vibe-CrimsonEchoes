@@ -13,6 +13,17 @@ export const GAME_CONFIG = {
   MAP_WIDTH: 1000,
   MAP_HEIGHT: 1000,
 
+  // Map Boundary Visuals
+  BOUNDARY: {
+    MARGIN: 100,                    // Playable area margin
+    PRIMARY_COLOR: 0x808080,        // Gray
+    SHADOW_COLOR: 0x000000,         // Black shadow
+    HIGHLIGHT_COLOR: 0xA0A0A0,      // Light gray highlight
+    STROKE_WIDTH: 6,                // Thicker for 3D effect
+    SHADOW_OFFSET: 3,               // Pixels for depth
+    SHADOW_ALPHA: 0.5,              // Shadow transparency
+  },
+
   // Player
   PLAYER: {
     MAX_HEALTH: 10,

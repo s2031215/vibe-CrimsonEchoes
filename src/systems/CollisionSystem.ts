@@ -51,7 +51,8 @@ export class CollisionSystem {
     player: Player,
     echoSystem: EchoSystem,
     spawnSystem: SpawnSystem,
-    xpSystem: XPSystem
+    xpSystem: XPSystem,
+    gameTime: number
   ): CollisionResult {
     const result: CollisionResult = {
       playerHit: false,
@@ -69,9 +70,18 @@ export class CollisionSystem {
     const enemyRadius = GAME_CONFIG.NIGHTLING.SIZE / 2;
     const bossRadius = GAME_CONFIG.BOSS.SIZE / 2;
 
+    // Pierce cooldown: prevent projectile from hitting again too quickly
+    const HIT_COOLDOWN = 0.15; // 150ms between hits
+
     // Check projectile vs enemy collisions
     for (const proj of projectiles) {
       if (!proj.state.active) continue;
+
+      // Check if projectile recently hit something (cooldown prevents double-hits)
+      const timeSinceLastHit = gameTime - proj.state.lastHitTime;
+      if (timeSinceLastHit < HIT_COOLDOWN) {
+        continue; // Skip collision check for this projectile
+      }
 
       for (const enemy of enemies) {
         if (!enemy.state.active) continue;
@@ -139,7 +149,7 @@ export class CollisionSystem {
           }
 
           // Check if projectile should be destroyed (pierce system)
-          const shouldDestroy = proj.markHit();
+          const shouldDestroy = proj.markHit(gameTime);
           if (shouldDestroy) {
             echoSystem.releaseProjectile(proj);
           }
@@ -208,7 +218,7 @@ export class CollisionSystem {
           }
 
           // Check if projectile should be destroyed (pierce system)
-          const shouldDestroy = proj.markHit();
+          const shouldDestroy = proj.markHit(gameTime);
           if (shouldDestroy) {
             echoSystem.releaseProjectile(proj);
           }

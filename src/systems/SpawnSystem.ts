@@ -134,6 +134,10 @@ export class SpawnSystem {
     if (this.enemyPool.activeCount >= GAME_CONFIG.MAX_ENEMIES) return;
 
     const pos = this.getRandomSpawnPosition(playerPos);
+    
+    // Skip spawn if no valid off-screen position exists (player near map edge)
+    if (!pos) return;
+    
     const enemy = this.enemyPool.acquire();
     
     // Calculate tier based on elapsed time (1 tier per minute)
@@ -167,13 +171,18 @@ export class SpawnSystem {
     if (this.activeBoss && this.activeBoss.state.active) return; // Only one boss at a time
 
     const pos = this.getRandomSpawnPosition(playerPos);
+    
+    // Skip boss spawn if no valid off-screen position exists (player near map edge)
+    // Boss will spawn on next attempt
+    if (!pos) return;
+    
     const boss = this.bossPool.acquire();
     boss.activate(pos.x, pos.y, bossType);
     this.activeBoss = boss;
   }
 
-  /** Get a random position just off-screen relative to player */
-  private getRandomSpawnPosition(playerPos: { x: number; y: number }): { x: number; y: number } {
+  /** Get a random position just off-screen relative to player. Returns null if no valid off-screen position exists. */
+  private getRandomSpawnPosition(playerPos: { x: number; y: number }): { x: number; y: number } | null {
     const margin = GAME_CONFIG.SPAWN.SPAWN_MARGIN;
     const edge = randomInt(0, 3); // 0: top, 1: right, 2: bottom, 3: left
 
@@ -206,10 +215,25 @@ export class SpawnSystem {
         break;
     }
 
-    // Clamp spawn position to 800x800 boundary (100px margin from map edges)
+    // Clamp spawn position to 800x800 playable area (100px margin from map edges)
     const boundaryMargin = 100;
-    x = Math.max(boundaryMargin, Math.min(GAME_CONFIG.MAP_WIDTH - boundaryMargin, x));
-    y = Math.max(boundaryMargin, Math.min(GAME_CONFIG.MAP_HEIGHT - boundaryMargin, y));
+    const minBoundary = boundaryMargin;
+    const maxBoundaryX = GAME_CONFIG.MAP_WIDTH - boundaryMargin;
+    const maxBoundaryY = GAME_CONFIG.MAP_HEIGHT - boundaryMargin;
+
+    x = Math.max(minBoundary, Math.min(maxBoundaryX, x));
+    y = Math.max(minBoundary, Math.min(maxBoundaryY, y));
+
+    // Check if spawn is still inside camera view after clamping
+    const isInsideCamera = 
+      x >= cameraLeft && x <= cameraRight &&
+      y >= cameraTop && y <= cameraBottom;
+
+    // If spawn would be visible, skip this enemy (return null)
+    // This happens when player is near map edge and off-screen spawn is impossible
+    if (isInsideCamera) {
+      return null;
+    }
 
     return { x, y };
   }

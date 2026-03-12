@@ -31,6 +31,7 @@ export interface ProjectileState extends EntityState {
   lifetime: number;
   pierce: number; // Number of enemies it can pass through (0 = hit once)
   pierceCount: number; // Current pierce count
+  lastHitTime: number; // Timestamp of last hit (for pierce cooldown)
   canSplit: boolean; // Can split on hit
   isExplosive: boolean; // Explodes on impact
   canChain: boolean; // Can chain to nearby enemies
@@ -134,6 +135,17 @@ export interface WeaponStats {
   directionalNovaSpawnRadius: number; // T3: Radius to spawn nova projectiles around player
   directionalNovaOrbitDuration: number; // T3: How long projectiles orbit before flying away (seconds)
   directionalNovaOrbitSpeed: number; // T3: Angular velocity for orbiting (radians/sec)
+  directionalSpawnDelay: number; // Time delay between sequential spawns for spiral burst (seconds)
+}
+
+/** Spiral burst queue item for sequential spawning */
+export interface SpiralBurstQueueItem {
+  delay: number;      // Time remaining before spawn
+  index: number;      // Which projectile in sequence (0-11)
+  from: Vec2;         // Spawn origin (player position)
+  speed: number;      // Projectile speed
+  angleStep: number;  // Angle spacing between projectiles
+  totalCount: number; // Total projectiles in burst
 }
 
 /** Result type for expected failures */

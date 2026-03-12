@@ -16,8 +16,11 @@ import { XPBar } from "@ui/XPBar";
 import { BossHPBar } from "@ui/BossHPBar";
 import { GameOverScreen } from "@ui/GameOverScreen";
 import { LevelUpScreen } from "@ui/LevelUpScreen";
+import { LuckyDrawWheel } from "@ui/LuckyDrawWheel";
+import { CheatMenu } from "@ui/CheatMenu";
 import { getRandomUpgrades } from "@game/Upgrades";
 import type { GameState } from "@/types";
+import type { WheelSlotType } from "@ui/LuckyDrawWheel";
 
 export class Game {
   // Containers
@@ -54,6 +57,8 @@ export class Game {
   private bossHPBar: BossHPBar;
   private gameOverScreen: GameOverScreen;
   private levelUpScreen: LevelUpScreen;
+  private luckyDrawWheel: LuckyDrawWheel;
+  private cheatMenu: CheatMenu;
 
   // Screen shake
   private shakeIntensity: number = 0;
@@ -94,6 +99,8 @@ export class Game {
     this.bossHPBar = new BossHPBar();
     this.gameOverScreen = new GameOverScreen();
     this.levelUpScreen = new LevelUpScreen();
+    this.luckyDrawWheel = new LuckyDrawWheel();
+    this.cheatMenu = new CheatMenu();
 
     this.uiContainer.addChild(this.healthBar.container);
     this.uiContainer.addChild(this.timer.container);
@@ -101,11 +108,23 @@ export class Game {
     this.uiContainer.addChild(this.bossHPBar.container);
     this.uiContainer.addChild(this.gameOverScreen.container);
     this.uiContainer.addChild(this.levelUpScreen.container);
+    this.uiContainer.addChild(this.luckyDrawWheel.container);
+    this.uiContainer.addChild(this.cheatMenu.container);
 
-    // Keyboard support for level up screen
+    // Keyboard support for level up screen and cheat menu
     window.addEventListener("keydown", (e) => {
       if (this.state === "levelup") {
         this.levelUpScreen.handleInput(e.key);
+        
+        // Allow SPACE or ENTER to exit Lucky Draw Wheel
+        if ((e.key === " " || e.key === "Enter") && this.luckyDrawWheel.isWaitingForUser()) {
+          this.luckyDrawWheel.triggerExit();
+        }
+      }
+      
+      // Toggle cheat menu with 'C' key (dev-only)
+      if (e.key === "c" || e.key === "C") {
+        this.cheatMenu.toggle(this);
       }
     });
   }
@@ -140,16 +159,43 @@ export class Game {
 
     this.backgroundContainer.addChild(this.backgroundGraphics);
 
-    // Create red boundary in gameContainer (so it moves with the world)
+    // Create 3D boundary with gray color and shadow effect
     this.boundaryGraphics = new Graphics();
-    const boundaryMargin = 100;
+    const margin = GAME_CONFIG.BOUNDARY.MARGIN;
+    const width = GAME_CONFIG.MAP_WIDTH - margin * 2;
+    const height = GAME_CONFIG.MAP_HEIGHT - margin * 2;
+
+    // Draw shadow (bottom-right offset for depth)
     this.boundaryGraphics.rect(
-      boundaryMargin, 
-      boundaryMargin, 
-      800, 
-      800
+      margin + GAME_CONFIG.BOUNDARY.SHADOW_OFFSET,
+      margin + GAME_CONFIG.BOUNDARY.SHADOW_OFFSET,
+      width,
+      height
     );
-    this.boundaryGraphics.stroke({ color: 0xFF0000, width: 4 });
+    this.boundaryGraphics.stroke({ 
+      color: GAME_CONFIG.BOUNDARY.SHADOW_COLOR, 
+      width: GAME_CONFIG.BOUNDARY.STROKE_WIDTH,
+      alpha: GAME_CONFIG.BOUNDARY.SHADOW_ALPHA
+    });
+
+    // Draw main boundary (gray)
+    this.boundaryGraphics.rect(margin, margin, width, height);
+    this.boundaryGraphics.stroke({ 
+      color: GAME_CONFIG.BOUNDARY.PRIMARY_COLOR, 
+      width: GAME_CONFIG.BOUNDARY.STROKE_WIDTH
+    });
+
+    // Draw highlight on top and left edges for 3D effect
+    this.boundaryGraphics
+      .moveTo(margin, margin)
+      .lineTo(margin + width, margin)
+      .moveTo(margin, margin)
+      .lineTo(margin, margin + height);
+    this.boundaryGraphics.stroke({ 
+      color: GAME_CONFIG.BOUNDARY.HIGHLIGHT_COLOR, 
+      width: 2,
+      alpha: 0.7
+    });
 
     // Add boundary to gameContainer so it moves with camera
     this.gameContainer.addChild(this.boundaryGraphics);
@@ -166,7 +212,7 @@ export class Game {
         this.updatePlaying(dt);
         break;
       case "levelup":
-        this.updateLevelUp();
+        this.updateLevelUp(dt);
         break;
       case "gameover":
       case "victory":
@@ -245,7 +291,8 @@ export class Game {
       this.player,
       this.echoSystem,
       this.spawnSystem,
-      this.xpSystem
+      this.xpSystem,
+      this.elapsedTime
     );
 
     // Separate overlapping enemies
@@ -317,32 +364,36 @@ export class Game {
     // Get current player level
     const currentLevel = this.xpSystem.getState().level;
     
-    // Get 3 random upgrades from the upgrade pool (filtered by level and acquired upgrades)
-    const choices = getRandomUpgrades(3, currentLevel, this.acquiredUpgradeIds, this.weaponTiers);
-
-    this.levelUpScreen.show(choices, (selectedUpgrade) => {
-      // Add selected upgrade to acquired set (only for weapon upgrades, not stat/heal)
-      // Stat and heal upgrades can be taken multiple times
-      if (selectedUpgrade.type === "weapon") {
-        this.acquiredUpgradeIds.add(selectedUpgrade.id);
+    // Get 3 contextual upgrades based on level and player progress
+    const upgrades = getRandomUpgrades(3, currentLevel, this.acquiredUpgradeIds, this.weaponTiers);
+    
+    // Show Lucky Draw Wheel with dynamic upgrades
+    this.luckyDrawWheel.show(upgrades, (slotType: WheelSlotType, selectedUpgrade) => {
+      if (slotType === "jackpot") {
+        // JACKPOT: Apply all 3 upgrades
+        for (const upgrade of upgrades) {
+          if (upgrade.type === "weapon") {
+            this.acquiredUpgradeIds.add(upgrade.id);
+          }
+          upgrade.apply(this);
+        }
+      } else if (selectedUpgrade) {
+        // Apply single selected upgrade
+        if (selectedUpgrade.type === "weapon") {
+          this.acquiredUpgradeIds.add(selectedUpgrade.id);
+        }
+        selectedUpgrade.apply(this);
       }
       
-      // Apply the upgrade
-      selectedUpgrade.apply(this);
-      this.levelUpScreen.hide();
+      // Return to playing state (after user exits wheel)
       this.state = "playing";
     });
   }
 
   /** Update level up state */
-  private updateLevelUp(): void {
-    // Only check keyboard numbers 1, 2, 3
-    // Pixi doesn't have a built-in keyboard state for individual keys easily in our simple input system,
-    // so we handle it by directly binding or checking the keys.
-    // For now, the LevelUpScreen's pointerdown handles mouse clicks.
-    // Let's add basic key polling if needed, or rely on mouse.
-    
-    // We can use a simple global event listener for 1/2/3 while in levelup state
+  private updateLevelUp(dt: number): void {
+    // Update Lucky Draw Wheel animation
+    this.luckyDrawWheel.update(dt);
   }
 
   /** Update game over state */

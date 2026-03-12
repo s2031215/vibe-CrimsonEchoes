@@ -13,7 +13,7 @@ import { Enemy } from "@entities/Enemy";
 import { Boss } from "@entities/Boss";
 import { ObjectPool } from "@utils/pool";
 import { distance, normalize, subtract } from "@utils/math";
-import type { Vec2, WeaponStats } from "@/types";
+import type { Vec2, WeaponStats, SpiralBurstQueueItem } from "@/types";
 
 export class EchoSystem {
   private projectilePool: ObjectPool<Projectile>;
@@ -63,7 +63,12 @@ export class EchoSystem {
     directionalNovaSpawnRadius: 40,
     directionalNovaOrbitDuration: 1.5,
     directionalNovaOrbitSpeed: Math.PI * 2,
+    directionalSpawnDelay: 0.2, // 200ms between sequential spiral spawns
   };
+
+  // Spiral burst queue for sequential spawning
+  private spiralBurstQueue: SpiralBurstQueueItem[] = [];
+
 
   private get fireCooldown(): number {
     return 1 / (this.stats.fireRate * this.weaponStats.fireRateMultiplier);
@@ -140,6 +145,28 @@ export class EchoSystem {
 
   /** Update echo system - fire projectiles/lasers and update existing ones */
   update(dt: number, playerPos: Vec2, enemies: ReadonlySet<Enemy>, boss: Boss | null = null): void {
+    // Process spiral burst queue (sequential spawning for Directional T3)
+    if (this.spiralBurstQueue.length > 0) {
+      for (let i = this.spiralBurstQueue.length - 1; i >= 0; i--) {
+        const item = this.spiralBurstQueue[i];
+        if (!item) continue;
+        
+        item.delay -= dt;
+        
+        if (item.delay <= 0) {
+          // Time to spawn this projectile
+          this.spawnSingleSpiralProjectile(
+            item.index,
+            item.angleStep,
+            item.from,
+            item.speed
+          );
+          // Remove from queue
+          this.spiralBurstQueue.splice(i, 1);
+        }
+      }
+    }
+
     // Update fire timer
     this.fireTimer -= dt;
 
@@ -528,59 +555,79 @@ export class EchoSystem {
     wave.push(proj);
   }
 
-  /** Fire nova burst - Archimedean spiral flight paths (Directional T3) */
+  /** Fire nova burst - Queue projectiles for sequential spawning (0.2s delay each) */
   private fireNovaBurst(from: Vec2, speed: number): void {
-    const totalCount = this.weaponStats.directionalCount;
+    const totalCount = this.weaponStats.directionalCount; // 12
     const angleStep = (Math.PI * 2) / totalCount;
+    const spawnDelay = this.weaponStats.directionalSpawnDelay; // 0.2s
+    
+    // Clear any existing queue
+    this.spiralBurstQueue = [];
+    
+    // Queue all projectiles with staggered delays
+    for (let i = 0; i < totalCount; i++) {
+      this.spiralBurstQueue.push({
+        delay: i * spawnDelay,  // 0s, 0.2s, 0.4s, 0.6s, ... 2.2s
+        index: i,
+        from: { x: from.x, y: from.y }, // Copy position
+        speed,
+        angleStep,
+        totalCount,
+      });
+    }
+  }
+
+  /** Spawn a single spiral projectile from queue */
+  private spawnSingleSpiralProjectile(
+    index: number,
+    angleStep: number,
+    from: Vec2,
+    speed: number
+  ): void {
+    const startAngle = angleStep * index;
     
     // Spiral flight parameters
-    const startRadius = 10;               // Start 10px from player
-    const angularVelocity = Math.PI * 1.5; // ~270°/second (tight spiral)
-    const growthRate = 15;                 // Radius grows 15px per radian
-    const direction = 1;                   // Counter-clockwise
+    const startRadius = 10;
+    const angularVelocity = Math.PI * 1.5;
+    const growthRate = 15;
+    const direction = 1;
     
-    for (let i = 0; i < totalCount; i++) {
-      // Evenly space starting angles around player
-      const startAngle = angleStep * i;
-      
-      // Spawn at starting position
-      const spawnX = from.x + Math.cos(startAngle) * startRadius;
-      const spawnY = from.y + Math.sin(startAngle) * startRadius;
-      
-      // Initial velocity (will be overridden by spiral behavior)
-      const vx = Math.cos(startAngle) * speed;
-      const vy = Math.sin(startAngle) * speed;
-      
-      const proj = this.projectilePool.acquire();
-      proj.activate(spawnX, spawnY, vx, vy, this.stats.damage);
-      
-      // Apply standard upgrades
-      proj.setUpgradeProperties(
-        this.weaponStats.pierceCount,
-        this.weaponStats.splitOnHit,
-        this.weaponStats.explosiveRadius > 0,
-        this.weaponStats.chainCount > 0,
-        this.weaponStats.chainCount,
-        this.weaponStats.homingStrength,
-        this.weaponStats.piercingSizeBoost
-      );
-      
-      // Enable trail effect
-      proj.state.hasTrail = true;
-      
-      // Enable Archimedean spiral flight
-      proj.enableSpiralFlight(
-        from,               // Spiral around player
-        startAngle,         // Start at evenly-spaced angle
-        startRadius,        // Start 10px from player
-        angularVelocity,    // Rotation speed
-        growthRate,         // Expansion speed
-        direction           // Counter-clockwise
-      );
-      
-      // Persist until leaving camera
-      proj.state.ignoreLifetime = true;
-    }
+    // Spawn at starting position
+    const spawnX = from.x + Math.cos(startAngle) * startRadius;
+    const spawnY = from.y + Math.sin(startAngle) * startRadius;
+    
+    const vx = Math.cos(startAngle) * speed;
+    const vy = Math.sin(startAngle) * speed;
+    
+    const proj = this.projectilePool.acquire();
+    proj.activate(spawnX, spawnY, vx, vy, this.stats.damage);
+    
+    // Apply standard upgrades
+    proj.setUpgradeProperties(
+      this.weaponStats.pierceCount,
+      this.weaponStats.splitOnHit,
+      this.weaponStats.explosiveRadius > 0,
+      this.weaponStats.chainCount > 0,
+      this.weaponStats.chainCount,
+      this.weaponStats.homingStrength,
+      this.weaponStats.piercingSizeBoost
+    );
+    
+    // Enable trail effect
+    proj.state.hasTrail = true;
+    
+    // Enable Archimedean spiral flight (no phase offset needed - sequential spawning handles it)
+    proj.enableSpiralFlight(
+      from,
+      startAngle,      // Just use starting angle
+      startRadius,
+      angularVelocity,
+      growthRate,
+      direction
+    );
+    
+    // Persist until leaving camera
+    proj.state.ignoreLifetime = true;
   }
 
   /** Spawn split projectiles from a hit */

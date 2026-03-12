@@ -12,9 +12,10 @@ export class Dragon {
   public position: Vec2 = { x: 0, y: 0 };
   public velocity: Vec2 = { x: 0, y: 0 };
   public damage: number = 1;
-  public radius: number = 16; // Enemy-sized hitbox
+  public radius: number = 20; // Slightly larger hitbox for longer dragon
   private trailPositions: Vec2[] = [];
   private animationTimer: number = 0;
+  private readonly maxTrailPositions = 12; // Longer trail for arrow effect
 
   constructor() {
     this.container = new Container();
@@ -58,51 +59,55 @@ export class Dragon {
   private drawDragon(): void {
     this.graphics.clear();
     
-    // Simple dragon design (16x16 sprite style)
+    // Arrow-like dragon design (elongated VERTICAL, 8x64 pixels)
     const wingFlap = Math.sin(this.animationTimer * 10) * 2; // Wing animation
     
-    // Dragon body (elongated oval)
+    // Dragon body (elongated arrow shaft - VERTICAL orientation)
     this.graphics.beginPath();
-    this.graphics.ellipse(0, 0, 12, 8);
+    this.graphics.ellipse(0, 0, 4, 32);
     this.graphics.fill({ color: 0x3366FF, alpha: 1.0 }); // Blue body
     
-    // Wings (flapping)
+    // Wings (flapping, positioned mid-body on Y-axis)
+    const wingY = 6; // Centered on vertical body
+    
     // Left wing
     this.graphics.beginPath();
-    this.graphics.moveTo(-6, 0);
-    this.graphics.lineTo(-12, -4 + wingFlap);
-    this.graphics.lineTo(-8, 2);
+    this.graphics.moveTo(0, -wingY);
+    this.graphics.lineTo(-6 + wingFlap, -wingY - 8);
+    this.graphics.lineTo(2, -wingY - 4);
     this.graphics.fill({ color: 0x6699FF, alpha: 0.8 }); // Lighter blue wings
     
     // Right wing
     this.graphics.beginPath();
-    this.graphics.moveTo(6, 0);
-    this.graphics.lineTo(12, -4 + wingFlap);
-    this.graphics.lineTo(8, 2);
+    this.graphics.moveTo(0, wingY);
+    this.graphics.lineTo(-6 + wingFlap, wingY + 8);
+    this.graphics.lineTo(2, wingY + 4);
     this.graphics.fill({ color: 0x6699FF, alpha: 0.8 });
     
-    // Dragon head (pointed)
+    // Dragon head - pointed arrow tip (TOP of vertical body)
     this.graphics.beginPath();
-    this.graphics.moveTo(0, -10);
-    this.graphics.lineTo(-3, -6);
-    this.graphics.lineTo(3, -6);
+    this.graphics.moveTo(0, -32);  // Sharp tip at top
+    this.graphics.lineTo(-5, -24);  // Wider base
+    this.graphics.lineTo(5, -24);
     this.graphics.fill({ color: 0x0044CC, alpha: 1.0 }); // Darker blue head
     
-    // Eyes (glowing)
-    this.graphics.circle(-2, -7, 1);
+    // Eyes (glowing, on head)
+    this.graphics.circle(-2, -26, 1.5);
     this.graphics.fill({ color: 0xFFFF00, alpha: 1.0 }); // Yellow eyes
-    this.graphics.circle(2, -7, 1);
+    this.graphics.circle(2, -26, 1.5);
     this.graphics.fill({ color: 0xFFFF00, alpha: 1.0 });
     
-    // Tail (curved)
+    // Tail - arrow fletching (BOTTOM of vertical body)
     this.graphics.beginPath();
-    this.graphics.moveTo(0, 6);
-    this.graphics.lineTo(-2, 10);
-    this.graphics.lineTo(2, 10);
+    this.graphics.moveTo(0, 32);  // Tail base
+    this.graphics.lineTo(-4, 36);  // Left fletching
+    this.graphics.lineTo(0, 34);
+    this.graphics.lineTo(4, 36);   // Right fletching
+    this.graphics.lineTo(0, 32);
     this.graphics.fill({ color: 0x3366FF, alpha: 1.0 });
     
     // Rotate to face movement direction
-    this.graphics.rotation = Math.atan2(this.velocity.y, this.velocity.x) + Math.PI / 2;
+    this.graphics.rotation = Math.atan2(this.velocity.y, this.velocity.x);
   }
 
   /** Draw trail effect behind dragon */
@@ -151,7 +156,7 @@ export class Dragon {
     
     // Update trail
     this.trailPositions.push({ x: this.position.x, y: this.position.y });
-    if (this.trailPositions.length > 8) {
+    if (this.trailPositions.length > this.maxTrailPositions) {
       this.trailPositions.shift();
     }
     

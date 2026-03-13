@@ -9,6 +9,8 @@ import { Boss } from "@entities/Boss";
 import { BossProjectile } from "@entities/BossProjectile";
 import { LaserWarning } from "@entities/LaserWarning";
 import { LaserBeam } from "@entities/LaserBeam";
+import { HealEnemy } from "@entities/HealEnemy";
+import { HealOrb } from "@entities/HealOrb";
 import { ObjectPool } from "@utils/pool";
 import { randomRange, randomInt } from "@utils/math";
 
@@ -18,8 +20,11 @@ export class SpawnSystem {
   private bossProjectilePool: ObjectPool<BossProjectile>;
   private laserWarningPool: ObjectPool<LaserWarning>;
   private laserBeamPool: ObjectPool<LaserBeam>;
+  private healEnemyPool: ObjectPool<HealEnemy>;
+  private healOrbPool: ObjectPool<HealOrb>;
   private container: Container;
   private spawnTimer: number = 0;
+  private healSpawnTimer: number = 0;
   private boss3MinSpawned: boolean = false;
   private boss5MinSpawned: boolean = false;
   private activeBoss: Boss | null = null;
@@ -90,20 +95,45 @@ export class SpawnSystem {
       2, // Initial pool size
       3 // Max 3 beams at once
     );
+
+    // Initialize heal enemy pool
+    this.healEnemyPool = new ObjectPool<HealEnemy>(
+      () => {
+        const he = new HealEnemy();
+        this.container.addChild(he.container);
+        return he;
+      },
+      (he) => he.reset(),
+      3, // Initial pool size
+      10 // Max 10 heal enemies
+    );
+
+    // Initialize heal orb pool
+    this.healOrbPool = new ObjectPool<HealOrb>(
+      () => {
+        const orb = new HealOrb();
+        this.container.addChild(orb.container);
+        return orb;
+      },
+      (orb) => orb.reset(),
+      5, // Initial pool size
+      20 // Max 20 heal orbs
+    );
   }
 
   /** Update spawn system - handles enemy and boss spawning based on elapsed time */
   update(dt: number, elapsedTime: number, playerPos: { x: number; y: number }): void {
     // Spawn boss at 3 minutes (180 seconds)
+    // Only mark as spawned if the spawn actually succeeded (activeBoss is now set)
     if (elapsedTime >= 180 && !this.boss3MinSpawned && !this.activeBoss) {
       this.spawnBoss(playerPos, 1); // Boss type 1 (slow projectiles)
-      this.boss3MinSpawned = true;
+      if (this.activeBoss) this.boss3MinSpawned = true;
     }
 
     // Spawn boss at 5 minutes (300 seconds - end of game)
     if (elapsedTime >= 300 && !this.boss5MinSpawned && !this.activeBoss) {
       this.spawnBoss(playerPos, 2); // Boss type 2 (laser + multi-shot)
-      this.boss5MinSpawned = true;
+      if (this.activeBoss) this.boss5MinSpawned = true;
     }
 
     // Calculate current spawn rate based on elapsed time
@@ -115,6 +145,13 @@ export class SpawnSystem {
     if (this.spawnTimer <= 0) {
       this.spawnEnemy(playerPos, elapsedTime);
       this.spawnTimer = spawnInterval;
+    }
+
+    // Spawn heal enemies on a fixed interval
+    this.healSpawnTimer -= dt;
+    if (this.healSpawnTimer <= 0) {
+      this.spawnHealEnemy(playerPos);
+      this.healSpawnTimer = GAME_CONFIG.HEAL_ENEMY.SPAWN_INTERVAL;
     }
   }
 
@@ -335,11 +372,50 @@ export class SpawnSystem {
     return this.enemyPool.activeCount;
   }
 
+  /** Get all active heal enemies */
+  getActiveHealEnemies(): ReadonlySet<HealEnemy> {
+    return this.healEnemyPool.getActive();
+  }
+
+  /** Get all active heal orbs */
+  getActiveHealOrbs(): ReadonlySet<HealOrb> {
+    return this.healOrbPool.getActive();
+  }
+
+  /** Spawn a heal enemy at a random off-screen position */
+  private spawnHealEnemy(playerPos: { x: number; y: number }): void {
+    if (this.healEnemyPool.activeCount >= 10) return;
+    const pos = this.getRandomSpawnPosition(playerPos);
+    if (!pos) return;
+    const he = this.healEnemyPool.acquire();
+    he.activate(pos.x, pos.y);
+  }
+
+  /** Release a heal enemy back to pool */
+  releaseHealEnemy(he: HealEnemy): void {
+    this.healEnemyPool.release(he);
+  }
+
+  /** Spawn a heal orb at a specific world position */
+  spawnHealOrb(x: number, y: number): void {
+    if (this.healOrbPool.activeCount >= 20) return;
+    const orb = this.healOrbPool.acquire();
+    orb.activate(x, y);
+  }
+
+  /** Release a heal orb back to pool */
+  releaseHealOrb(orb: HealOrb): void {
+    this.healOrbPool.release(orb);
+  }
+
   /** Reset system */
   reset(): void {
     this.enemyPool.releaseAll();
     this.bossPool.releaseAll();
+    this.healEnemyPool.releaseAll();
+    this.healOrbPool.releaseAll();
     this.spawnTimer = 0;
+    this.healSpawnTimer = 0;
     this.boss3MinSpawned = false;
     this.boss5MinSpawned = false;
     this.activeBoss = null;

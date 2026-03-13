@@ -34,6 +34,8 @@ export class LuckyDrawWheel {
   private jackpotUpgradeRows: Container[] = [];
 
   private onResultCallback: ((slotType: WheelSlotType, boost: Upgrade | null) => void) | null = null;
+  private rerollCallback: ((slotIndex: number) => Upgrade) | null = null;
+  private rerollsRemaining: number = 2;
 
   private isSpinning: boolean = false;
   private waitingForUser: boolean = false;
@@ -142,22 +144,10 @@ export class LuckyDrawWheel {
       const upgrade = upgrades[i];
       if (!upgrade) continue;
 
-      // Determine color based on upgrade type
-      let color: number;
-      if (upgrade.type === "weapon") {
-        color = 0xef4444; // Red
-      } else if (upgrade.type === "stat") {
-        color = 0x3b82f6; // Blue
-      } else if (upgrade.type === "heal") {
-        color = 0x10b981; // Green
-      } else {
-        color = 0x8b5cf6; // Purple (fallback)
-      }
-
       slots.push({
         type: `slot${i + 1}` as WheelSlotType,
         probability: 0.3,
-        color,
+        color: this.upgradeTypeColor(upgrade),
         upgrade,
       });
     }
@@ -275,10 +265,10 @@ export class LuckyDrawWheel {
     // Clear previous content
     this.slotDetailPanel.removeChildren();
 
-    const panelX = 4;
+    const panelX = 10;
     const panelY = 30;
     const panelW = 136;
-    const panelH = 200;
+    const panelH = 220;
 
     // Panel background
     const bg = new Graphics();
@@ -310,8 +300,8 @@ export class LuckyDrawWheel {
     this.slotDetailPanel.addChild(divider);
 
     // Slot rows
-    const rowStartY = panelY + 22;
-    const rowHeight = 44;
+    const rowStartY = panelY + 20;
+    const rowHeight = 50;
 
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
@@ -395,20 +385,66 @@ export class LuckyDrawWheel {
         sep.stroke({ color: 0x333355, width: 1 });
         rowContainer.addChild(sep);
       }
+
+      // Reroll button (only for non-jackpot slots)
+      if (slot.type !== "jackpot") {
+        const slotIndex = i;
+        const canReroll = this.rerollsRemaining > 0 && !this.isSpinning && !!this.rerollCallback;
+        const btnW = 48;
+        const btnH = 10;
+        const btnX = panelX + panelW - btnW - 10;
+        const btnY = rowY + 35;
+
+        // Derive active colors from the slot's upgrade type color
+        // Dark tinted bg (~30% brightness), full color for stroke, light tint for text
+        const r = (slot.color >> 16) & 0xff;
+        const g = (slot.color >> 8) & 0xff;
+        const b = slot.color & 0xff;
+        const darkBg = ((Math.floor(r * 0.3) << 16) | (Math.floor(g * 0.3) << 8) | Math.floor(b * 0.3));
+        const hoverBg = ((Math.floor(r * 0.5) << 16) | (Math.floor(g * 0.5) << 8) | Math.floor(b * 0.5));
+        const lightText = ((Math.min(255, Math.floor(r * 1.4)) << 16) | (Math.min(255, Math.floor(g * 1.4)) << 8) | Math.min(255, Math.floor(b * 1.4)));
+
+        const btnBg = new Graphics();
+        btnBg.rect(btnX, btnY, btnW, btnH);
+        btnBg.fill({ color: canReroll ? darkBg : 0x1a1a1a });
+        btnBg.stroke({ color: canReroll ? slot.color : 0x333333, width: 1 });
+        rowContainer.addChild(btnBg);
+
+        const btnStyle = new TextStyle({
+          fontFamily: "monospace",
+          fontSize: 6,
+          fill: canReroll ? lightText : 0x444444,
+          fontWeight: "bold",
+        });
+        const remaining = this.rerollsRemaining;
+        const btnLabel = new Text({ text: `Reroll (${remaining})`, style: btnStyle });
+        btnLabel.anchor.set(0.5);
+        btnLabel.x = btnX + btnW / 2;
+        btnLabel.y = btnY + btnH / 2;
+        rowContainer.addChild(btnLabel);
+
+        if (canReroll) {
+          btnBg.eventMode = "static";
+          btnBg.cursor = "pointer";
+          btnBg.on("pointerover", () => {
+            btnBg.clear();
+            btnBg.rect(btnX, btnY, btnW, btnH);
+            btnBg.fill({ color: hoverBg });
+            btnBg.stroke({ color: slot.color, width: 1 });
+          });
+          btnBg.on("pointerout", () => {
+            btnBg.clear();
+            btnBg.rect(btnX, btnY, btnW, btnH);
+            btnBg.fill({ color: darkBg });
+            btnBg.stroke({ color: slot.color, width: 1 });
+          });
+          btnBg.on("pointerdown", () => {
+            this.rerollSlot(slotIndex);
+          });
+        }
+      }
     }
 
-    // Hint at bottom
-    const hintStyle = new TextStyle({
-      fontFamily: "monospace",
-      fontSize: 7,
-      fill: 0x666688,
-      align: "center",
-    });
-    const hint = new Text({ text: "Press ENTER or\nclick SPIN!", style: hintStyle });
-    hint.anchor.set(0.5);
-    hint.x = panelX + panelW / 2;
-    hint.y = panelY + panelH - 10;
-    this.slotDetailPanel.addChild(hint);
   }
 
   // =============================================================================
@@ -763,11 +799,45 @@ export class LuckyDrawWheel {
   // Public API
   // =============================================================================
 
+  /** Reroll a single slot's upgrade (costs 1 reroll) */
+  private rerollSlot(slotIndex: number): void {
+    if (this.rerollsRemaining <= 0) return;
+    if (!this.rerollCallback) return;
+    if (this.isSpinning) return;
+
+    const slot = this.slots[slotIndex];
+    if (!slot || slot.type === "jackpot") return;
+
+    const newUpgrade = this.rerollCallback(slotIndex);
+    slot.upgrade = newUpgrade;
+    slot.color = this.upgradeTypeColor(newUpgrade); // Update color if type changed
+    this.currentUpgrades[slotIndex] = newUpgrade;
+    this.rerollsRemaining--;
+
+    // Redraw wheel label and slot panel to reflect new upgrade + new color
+    this.drawWheel();
+    this.drawSlotDetailPanel();
+  }
+
+  /** Map upgrade type to its display color */
+  private upgradeTypeColor(upgrade: Upgrade): number {
+    if (upgrade.type === "weapon") return 0xef4444; // Red
+    if (upgrade.type === "stat") return 0x3b82f6;   // Blue
+    if (upgrade.type === "heal") return 0x10b981;   // Green
+    return 0x8b5cf6;                                // Purple (fallback)
+  }
+
   /** Show wheel with 3 upgrades */
-  show(upgrades: Upgrade[], onResult: (slotType: WheelSlotType, boost: Upgrade | null) => void): void {
+  show(
+    upgrades: Upgrade[],
+    onResult: (slotType: WheelSlotType, boost: Upgrade | null) => void,
+    rerollCallback?: (slotIndex: number) => Upgrade
+  ): void {
     this.container.visible = true;
     this.currentUpgrades = upgrades;
     this.onResultCallback = onResult;
+    this.rerollCallback = rerollCallback ?? null;
+    this.rerollsRemaining = 2;
 
     // Generate dynamic slots from upgrades
     this.slots = this.generateSlots(upgrades);

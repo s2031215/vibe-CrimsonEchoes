@@ -5,6 +5,7 @@
 import { Container, Graphics } from "pixi.js";
 import { GAME_CONFIG } from "@game/GameConfig";
 import { Player } from "@entities/Player";
+import { BossXPOrb } from "@entities/BossXPOrb";
 import { InputSystem } from "@systems/InputSystem";
 import { EchoSystem } from "@systems/EchoSystem";
 import { SpawnSystem } from "@systems/SpawnSystem";
@@ -21,6 +22,7 @@ import { CheatMenu } from "@ui/CheatMenu";
 import { getRandomUpgrades } from "@game/Upgrades";
 import type { GameState } from "@/types";
 import type { WheelSlotType } from "@ui/LuckyDrawWheel";
+import { ObjectPool } from "@utils/pool";
 
 export class Game {
   // Containers
@@ -45,6 +47,11 @@ export class Game {
 
   // Entities
   private player: Player;
+
+  // Boss XP orb (Feature 4)
+  private bossXPOrbPool: ObjectPool<BossXPOrb>;
+  private bossWasActive: boolean = false;
+  private bossLastPos: { x: number; y: number } = { x: 0, y: 0 };
 
   // Progression tracking
   private acquiredUpgradeIds: Set<string> = new Set();
@@ -89,6 +96,18 @@ export class Game {
     // Initialize player
     this.player = new Player();
     this.gameContainer.addChild(this.player.container);
+
+    // Initialize BossXPOrb pool (Feature 4)
+    this.bossXPOrbPool = new ObjectPool<BossXPOrb>(
+      () => {
+        const orb = new BossXPOrb();
+        this.gameContainer.addChild(orb.container);
+        return orb;
+      },
+      (orb) => orb.reset(),
+      2,
+      2
+    );
 
     // Initialize game systems (order matters for rendering)
     this.xpSystem = new XPSystem(this.gameContainer);
@@ -287,6 +306,10 @@ export class Game {
     // Update boss
     const boss = this.spawnSystem.getActiveBoss();
     if (boss && boss.state.active) {
+      // Record last known position before any release can happen this frame
+      this.bossLastPos.x = boss.state.position.x;
+      this.bossLastPos.y = boss.state.position.y;
+
       // Wire up boss attack callbacks (if not already set)
       if (!boss.onSpawnProjectile) {
         boss.onSpawnProjectile = (x, y, vx, vy, damage) => {
@@ -306,8 +329,8 @@ export class Game {
     // Update boss attacks (projectiles, warnings, beams)
     this.spawnSystem.updateBossAttacks(dt);
 
-    this.echoSystem.update(dt, this.player.state.position, enemies, boss);
-    this.xpSystem.update(dt, this.player.state.position);
+    this.echoSystem.update(dt, this.player.state.position, enemies, boss, this.spawnSystem.getActiveHealEnemies());
+    this.xpSystem.update(dt, this.player.state.position, this.player.stats.speed);
 
     // Check collisions
     const collisionResult = this.collisionSystem.checkCollisions(
@@ -327,6 +350,43 @@ export class Game {
     // Update lightning link animations
     this.collisionSystem.updateLightningLinks(dt);
 
+    // Update floating damage numbers (Feature 1)
+    this.collisionSystem.updateDamageNumbers(dt);
+
+    // Update heal enemies — flee from player (Feature 5)
+    for (const he of this.spawnSystem.getActiveHealEnemies()) {
+      he.update(dt, this.player.state.position);
+    }
+
+    // Update heal orbs (magnetize toward player) (Feature 5)
+    const magnetSpeed = this.player.stats.speed + GAME_CONFIG.XP.MAGNET_SPEED_BONUS;
+    for (const orb of this.spawnSystem.getActiveHealOrbs()) {
+      if (orb.update(dt, this.player.state.position, magnetSpeed)) {
+        this.spawnSystem.releaseHealOrb(orb);
+        this.player.heal(1);
+        this.healthBar.update(this.player.state.health);
+      }
+    }
+
+    // Track boss for BossXPOrb spawn (Feature 4)
+    const bossNowActive = !!this.spawnSystem.getActiveBoss();
+    if (this.bossWasActive && !bossNowActive) {
+      // Boss just died — spawn a BossXPOrb at last known boss position
+      // We get position from the check before releaseBoss was called;
+      // as a fallback, spawn near map center
+      const bossXPOrb = this.bossXPOrbPool.acquire();
+      bossXPOrb.activate(this.bossLastPos.x, this.bossLastPos.y);
+    }
+    this.bossWasActive = bossNowActive;
+
+    // Update BossXPOrbs — magnetize and collect (Feature 4)
+    for (const bossOrb of this.bossXPOrbPool.getActive()) {
+      if (bossOrb.update(dt, this.player.state.position, magnetSpeed)) {
+        this.xpSystem.grantFullLevel();
+        this.bossXPOrbPool.release(bossOrb);
+      }
+    }
+
     // Handle collision results
     if (collisionResult.playerHit) {
       this.triggerScreenShake(5, 0.2);
@@ -335,6 +395,11 @@ export class Game {
     if (collisionResult.playerDied) {
       this.gameOver();
       return;
+    }
+
+    // Heal player from heal orb collected via collision system (Feature 5)
+    if (collisionResult.playerHealed) {
+      this.player.heal(1);
     }
 
     // Victory condition: Final boss (type 2) killed
@@ -410,6 +475,18 @@ export class Game {
       
       // Return to playing state (after user exits wheel)
       this.state = "playing";
+    }, (slotIndex: number) => {
+      // Reroll callback: get a new upgrade for the given slot index
+      // Exclude the other two currently-shown upgrades temporarily
+      const otherIds = upgrades
+        .filter((_, i) => i !== slotIndex)
+        .map(u => u.id);
+      const tempExcluded = new Set([...this.acquiredUpgradeIds, ...otherIds]);
+      const [newUpgrade] = getRandomUpgrades(1, currentLevel, tempExcluded, this.weaponTiers);
+      if (newUpgrade) {
+        upgrades[slotIndex] = newUpgrade;
+      }
+      return upgrades[slotIndex]!;
     });
   }
 

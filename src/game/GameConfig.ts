@@ -69,6 +69,7 @@ export const GAME_CONFIG = {
     ORB_SIZE: 3, // Smaller for cyberpunk data chip aesthetic
     MAGNET_RANGE: 50,
     MAGNET_SPEED: 150,
+    MAGNET_SPEED_BONUS: 80, // Added to player speed for orb magnet speed
     LEVELS: [0, 10, 25, 50, 100, 175, 275, 400, 550, 725, 925],
   },
 
@@ -104,6 +105,14 @@ export const GAME_CONFIG = {
   SURVIVAL_TIME: 360, // 6 minutes in seconds
   MAX_PROJECTILES: 100,
   MAX_ENEMIES: 200,
+
+  // Heal Enemy
+  HEAL_ENEMY: {
+    HEALTH: 1,
+    SPEED: 52,
+    SPAWN_INTERVAL: 15, // seconds between heal enemy spawns
+    DESIRED_DIST: 200,  // preferred distance from player (px)
+  },
 } as const;
 
 export type GameConfig = typeof GAME_CONFIG;

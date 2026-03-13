@@ -12,6 +12,8 @@ const WEAPON_RESET_STATS: Record<string, (game: Game) => void> = {
   shotgun: (game: Game) => {
     game["echoSystem"].weaponStats.shotgunCount = 0;
     game["echoSystem"].weaponStats.shotgunLineWaveMode = false;
+    game["echoSystem"].weaponStats.shotgunWaveHoming = false;
+    game["echoSystem"].crimsonWaveFireCooldown = 0;
   },
   piercing_rounds: (game: Game) => {
     game["echoSystem"].weaponStats.pierceCount = 0;
@@ -33,6 +35,8 @@ const WEAPON_RESET_STATS: Record<string, (game: Game) => void> = {
     game["echoSystem"].weaponStats.meteoriteCount = 0;
     game["echoSystem"].weaponStats.meteoriteDuration = 0;
     game["echoSystem"].weaponStats.meteoriteSpawnRadius = 0;
+    game["echoSystem"].weaponStats.meteoriteMaxRadius = 0;
+    game["echoSystem"].meteoriteFireCooldown = 0;
   },
   homing_missiles: (game: Game) => {
     game["echoSystem"].weaponStats.homingStrength = 0;

@@ -44,9 +44,9 @@ export class XPSystem {
   }
 
   /** Update all orbs and check collection */
-  update(dt: number, playerPos: Vec2): void {
+  update(dt: number, playerPos: Vec2, playerSpeed: number = GAME_CONFIG.XP.MAGNET_SPEED): void {
     for (const orb of this.orbPool.getActive()) {
-      if (orb.update(dt, playerPos)) {
+      if (orb.update(dt, playerPos, playerSpeed)) {
         // Orb was collected
         this.addXP(orb.state.value);
         this.orbPool.release(orb);
@@ -88,6 +88,11 @@ export class XPSystem {
       return true;
     }
     return false;
+  }
+
+  /** Grant a full level immediately (used by Boss XP orb) */
+  grantFullLevel(): void {
+    this.addXP(this.state.xpToNextLevel - this.state.xp);
   }
 
   /** Get current progression state */

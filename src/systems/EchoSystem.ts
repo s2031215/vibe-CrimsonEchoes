@@ -8,9 +8,11 @@ import { Projectile } from "@entities/Projectile";
 import { LaserBeam } from "@entities/LaserBeam";
 import { Meteorite } from "@entities/Meteorite";
 import { Dragon } from "@entities/Dragon";
+import { CrimsonWave } from "@entities/CrimsonWave";
 import { PlayerClone } from "@entities/PlayerClone";
 import { Enemy } from "@entities/Enemy";
 import { Boss } from "@entities/Boss";
+import { HealEnemy } from "@entities/HealEnemy";
 import { ObjectPool } from "@utils/pool";
 import { distance, normalize, subtract } from "@utils/math";
 import type { Vec2, WeaponStats, SpiralBurstQueueItem } from "@/types";
@@ -20,12 +22,25 @@ export class EchoSystem {
   private laserBeamPool: ObjectPool<LaserBeam>;
   private meteoritePool: ObjectPool<Meteorite>;
   private dragonPool: ObjectPool<Dragon>;
+  private crimsonWavePool: ObjectPool<CrimsonWave>;
+  private activeCrimsonWaves: CrimsonWave[] = [];
   private clonePool: ObjectPool<PlayerClone>;
   private activeClone: PlayerClone | null = null; // Only one clone
   private container: Container;
   private fireTimer: number = 0;
   private waveConnectorGraphics: Graphics;
-  private activeWaves: Projectile[][] = []; // Track each wave separately
+
+  // Last known player position (stored each update, used by chain arc and split wave)
+  private lastPlayerPos: Vec2 = { x: 0, y: 0 };
+
+  // Chain return arcs: lightning bolt drawn from last chain enemy back to player
+  private chainReturnArcs: { x1: number; y1: number; x2: number; y2: number; lifetime: number }[] = [];
+
+  // Override fire cooldown when meteorite mode is active (0 = use normal rate)
+  public meteoriteFireCooldown: number = 0;
+
+  // Override fire cooldown for Crimson Wave T3 shotgun (0 = use normal rate)
+  public crimsonWaveFireCooldown: number = 0;
 
   // Upgradable Stats
   public stats = {
@@ -39,6 +54,7 @@ export class EchoSystem {
     shotgunCount: 1,
     shotgunWaveMode: false,
     shotgunLineWaveMode: false,
+    shotgunWaveHoming: false,
     shotgunWavePierce: 0,
     pierceCount: 0,
     piercingSizeBoost: 1.0,
@@ -51,6 +67,7 @@ export class EchoSystem {
     meteoriteDuration: 3.0,
     meteoriteCount: 2,
     meteoriteSpawnRadius: 150,
+    meteoriteMaxRadius: 0,
     chainCount: 0,
     chainDragonMode: false,
     fireRateMultiplier: 1.0,
@@ -71,6 +88,12 @@ export class EchoSystem {
 
 
   private get fireCooldown(): number {
+    if (this.weaponStats.shotgunLineWaveMode && this.crimsonWaveFireCooldown > 0) {
+      return this.crimsonWaveFireCooldown;
+    }
+    if (this.weaponStats.meteoriteMode && this.meteoriteFireCooldown > 0) {
+      return this.meteoriteFireCooldown;
+    }
     return 1 / (this.stats.fireRate * this.weaponStats.fireRateMultiplier);
   }
 
@@ -130,6 +153,18 @@ export class EchoSystem {
       8 // Max 8 dragons
     );
 
+    // Initialize crimson wave pool (for Shotgun T3)
+    this.crimsonWavePool = new ObjectPool<CrimsonWave>(
+      () => {
+        const wave = new CrimsonWave();
+        this.container.addChild(wave.container);
+        return wave;
+      },
+      (wave) => wave.reset(),
+      3,  // Initial pool size
+      10  // Max 10 simultaneous waves
+    );
+
     // Initialize clone pool (for Homing Missiles T3) - only 1 clone
     this.clonePool = new ObjectPool<PlayerClone>(
       () => {
@@ -144,7 +179,9 @@ export class EchoSystem {
   }
 
   /** Update echo system - fire projectiles/lasers and update existing ones */
-  update(dt: number, playerPos: Vec2, enemies: ReadonlySet<Enemy>, boss: Boss | null = null): void {
+  update(dt: number, playerPos: Vec2, enemies: ReadonlySet<Enemy>, boss: Boss | null = null, healEnemies: ReadonlySet<HealEnemy> = new Set()): void {
+    // Store player position for use by chain arc and split wave
+    this.lastPlayerPos = playerPos;
     // Process spiral burst queue (sequential spawning for Directional T3)
     if (this.spiralBurstQueue.length > 0) {
       for (let i = this.spiralBurstQueue.length - 1; i >= 0; i--) {
@@ -172,10 +209,10 @@ export class EchoSystem {
 
     // Fire at nearest enemy
     if (this.fireTimer <= 0) {
-      const nearestEnemy = this.findNearestEnemy(playerPos, enemies, boss);
+      const nearestEnemy = this.findNearestEnemy(playerPos, enemies, boss, healEnemies);
 
       if (nearestEnemy) {
-        this.fireAtTarget(playerPos, nearestEnemy.state.position);
+        this.fireAtTarget(playerPos, this.getEntityPosition(nearestEnemy));
         
         // Spawn meteorites around player if meteorite mode is active
         if (this.weaponStats.meteoriteMode) {
@@ -192,7 +229,7 @@ export class EchoSystem {
       let nearestEnemy = undefined;
       if (proj.state.homingStrength > 0) {
         const nearest = this.findNearestEnemy(proj.state.position, enemies);
-        nearestEnemy = nearest ? nearest.state.position : undefined;
+        nearestEnemy = nearest ? this.getEntityPosition(nearest) : undefined;
       }
 
       // Pass player position for orbiting projectiles
@@ -227,6 +264,15 @@ export class EchoSystem {
       }
     }
 
+    // Update all active crimson waves (T3 Shotgun)
+    for (let i = this.activeCrimsonWaves.length - 1; i >= 0; i--) {
+      const wave = this.activeCrimsonWaves[i]!;
+      if (wave.update(dt)) {
+        this.crimsonWavePool.release(wave);
+        this.activeCrimsonWaves.splice(i, 1);
+      }
+    }
+
     // Spawn or update player clone (Homing Missiles T3) - only despawn when off-camera
     if (this.weaponStats.homingCloneMode) {
       // Spawn clone if not active
@@ -242,7 +288,7 @@ export class EchoSystem {
           // Clone fires projectile
           const nearestEnemy = this.findNearestEnemy(clonePos, enemies, boss);
           if (nearestEnemy) {
-            this.fireAtTargetFromClone(clonePos, nearestEnemy.state.position);
+            this.fireAtTargetFromClone(clonePos, this.getEntityPosition(nearestEnemy));
           }
         });
         
@@ -273,60 +319,95 @@ export class EchoSystem {
       }
     }
 
-    // Remove inactive waves and filter out inactive projectiles from each wave
-    this.activeWaves = this.activeWaves
-      .map(wave => wave.filter(p => p.state.active))
-      .filter(wave => wave.length > 0);
-
-    // Draw connectors between wave projectiles
-    this.drawWaveConnectors();
+    // Draw chain return arcs
+    this.drawChainReturnArcs(dt);
   }
 
-  /** Draw visual connectors between wave projectiles */
-  private drawWaveConnectors(): void {
+  /** Draw/age chain return arcs (jagged cyan bolt from last chain enemy back to player) */
+  private drawChainReturnArcs(dt: number): void {
     this.waveConnectorGraphics.clear();
 
-    // Draw each wave separately (don't connect different waves)
-    for (const wave of this.activeWaves) {
-      if (wave.length < 2) continue;
-
-      // Draw lines connecting adjacent projectiles within this wave only
-      for (let i = 0; i < wave.length - 1; i++) {
-        const p1 = wave[i];
-        const p2 = wave[i + 1];
-
-        if (!p1 || !p2 || !p1.state.active || !p2.state.active) continue;
-
-        const x1 = p1.state.position.x;
-        const y1 = p1.state.position.y;
-        const x2 = p2.state.position.x;
-        const y2 = p2.state.position.y;
-
-        // Outer glow
-        this.waveConnectorGraphics.moveTo(x1, y1);
-        this.waveConnectorGraphics.lineTo(x2, y2);
-        this.waveConnectorGraphics.stroke({ width: 8, color: 0xFF00FF, alpha: 0.3 });
-
-        // Middle layer
-        this.waveConnectorGraphics.moveTo(x1, y1);
-        this.waveConnectorGraphics.lineTo(x2, y2);
-        this.waveConnectorGraphics.stroke({ width: 4, color: 0xFF00FF, alpha: 0.6 });
-
-        // Core line
-        this.waveConnectorGraphics.moveTo(x1, y1);
-        this.waveConnectorGraphics.lineTo(x2, y2);
-        this.waveConnectorGraphics.stroke({ width: 2, color: 0xFFFFFF, alpha: 0.8 });
+    const CHAIN_ARC_LIFETIME = 0.3;
+    for (let i = this.chainReturnArcs.length - 1; i >= 0; i--) {
+      const arc = this.chainReturnArcs[i];
+      if (!arc) continue;
+      arc.lifetime -= dt;
+      if (arc.lifetime <= 0) {
+        this.chainReturnArcs.splice(i, 1);
+        continue;
       }
+
+      const alpha = arc.lifetime / CHAIN_ARC_LIFETIME;
+      const dx = arc.x2 - arc.x1;
+      const dy = arc.y2 - arc.y1;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      // Perpendicular unit vector for jagged offsets
+      const px = -dy / len;
+      const py = dx / len;
+
+      // Build 5 random-offset intermediate points along the bolt
+      const SEGMENTS = 6; // 5 mid-points -> 6 segments
+      const points: { x: number; y: number }[] = [{ x: arc.x1, y: arc.y1 }];
+      for (let s = 1; s < SEGMENTS; s++) {
+        const t = s / SEGMENTS;
+        const jitter = (Math.random() - 0.5) * len * 0.25;
+        points.push({
+          x: arc.x1 + dx * t + px * jitter,
+          y: arc.y1 + dy * t + py * jitter,
+        });
+      }
+      points.push({ x: arc.x2, y: arc.y2 });
+
+      // Outer glow (cyan)
+      this.waveConnectorGraphics.moveTo(points[0]!.x, points[0]!.y);
+      for (let s = 1; s < points.length; s++) {
+        this.waveConnectorGraphics.lineTo(points[s]!.x, points[s]!.y);
+      }
+      this.waveConnectorGraphics.stroke({ width: 6, color: 0x00FFFF, alpha: alpha * 0.35 });
+
+      // Mid layer (cyan)
+      this.waveConnectorGraphics.moveTo(points[0]!.x, points[0]!.y);
+      for (let s = 1; s < points.length; s++) {
+        this.waveConnectorGraphics.lineTo(points[s]!.x, points[s]!.y);
+      }
+      this.waveConnectorGraphics.stroke({ width: 3, color: 0x00FFFF, alpha: alpha * 0.7 });
+
+      // White core
+      this.waveConnectorGraphics.moveTo(points[0]!.x, points[0]!.y);
+      for (let s = 1; s < points.length; s++) {
+        this.waveConnectorGraphics.lineTo(points[s]!.x, points[s]!.y);
+      }
+      this.waveConnectorGraphics.stroke({ width: 1, color: 0xFFFFFF, alpha: alpha });
     }
+  }
+
+  /** Register a chain return arc from the last-hit enemy position back to the player */
+  public addChainReturnArc(fromPos: Vec2): void {
+    this.chainReturnArcs.push({
+      x1: fromPos.x,
+      y1: fromPos.y,
+      x2: this.lastPlayerPos.x,
+      y2: this.lastPlayerPos.y,
+      lifetime: 0.3,
+    });
+  }
+
+  /** Extract world position from any targetable entity */
+  private getEntityPosition(entity: Enemy | Boss | HealEnemy): Vec2 {
+    if (entity instanceof HealEnemy) {
+      return entity.position;
+    }
+    return entity.state.position;
   }
 
   /** Find the nearest active enemy */
   private findNearestEnemy(
     playerPos: Vec2,
     enemies: ReadonlySet<Enemy>,
-    boss: Boss | null = null
-  ): Enemy | Boss | null {
-    let nearest: Enemy | Boss | null = null;
+    boss: Boss | null = null,
+    healEnemies: ReadonlySet<HealEnemy> = new Set()
+  ): Enemy | Boss | HealEnemy | null {
+    let nearest: Enemy | Boss | HealEnemy | null = null;
     let nearestDist = Infinity;
 
     // Check regular enemies
@@ -346,6 +427,17 @@ export class EchoSystem {
       if (dist < nearestDist) {
         nearestDist = dist;
         nearest = boss;
+      }
+    }
+
+    // Check heal enemies
+    for (const he of healEnemies) {
+      if (!he.active) continue;
+
+      const dist = distance(playerPos, he.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = he;
       }
     }
 
@@ -395,51 +487,15 @@ export class EchoSystem {
       return;
     }
 
-    // SHOTGUN MODE: Spread pattern or Line Wave
+    // T3 CRIMSON WAVE: Expanding fan cone — checked before shotgunCount guard
+    if (this.weaponStats.shotgunLineWaveMode) {
+      this.spawnCrimsonWave(from, Math.atan2(direction.y, direction.x));
+      return;
+    }
+
+    // SHOTGUN MODE: Spread pattern
     const shotgunCount = this.weaponStats.shotgunCount;
     if (shotgunCount > 1) {
-      // T3: Line Wave Mode - Creates a continuous 120° curved wave of piercing projectiles
-      if (this.weaponStats.shotgunLineWaveMode) {
-        // Create a new wave array for this shot
-        const currentWave: Projectile[] = [];
-
-        const baseAngle = Math.atan2(direction.y, direction.x);
-        const arcRadians = (120 * Math.PI) / 180; // 120-degree arc
-        const arcRadius = 80; // Radius of the curved arc formation
-        const startDistance = -50; // Start behind player (negative = behind)
-        
-        // Create projectiles along a curved arc facing the aim direction
-        for (let i = 0; i < shotgunCount; i++) {
-          // Map i to parameter t (0 to 1)
-          const t = i / (shotgunCount - 1 || 1); // Avoid division by zero
-          
-          // Calculate angle along the arc, centered on aim direction
-          // Arc ranges from -60° to +60° relative to aim direction
-          const curveAngle = baseAngle + (t - 0.5) * arcRadians;
-          
-          // Position projectile along the curved arc
-          const offsetX = Math.cos(curveAngle) * arcRadius;
-          const offsetY = Math.sin(curveAngle) * arcRadius;
-          
-          // Move starting position back behind the player
-          const backwardX = Math.cos(baseAngle) * startDistance;
-          const backwardY = Math.sin(baseAngle) * startDistance;
-          
-          const startX = from.x + offsetX + backwardX;
-          const startY = from.y + offsetY + backwardY;
-          
-          // All projectiles move in the SAME direction (parallel to aim)
-          const vx = direction.x * speed;
-          const vy = direction.y * speed;
-          
-          this.spawnWaveProjectile(startX, startY, vx, vy, currentWave);
-        }
-
-        // Add this wave to the active waves list
-        this.activeWaves.push(currentWave);
-        return;
-      }
-      
       // T1-T2: Regular spread pattern
       const spreadRadians = this.weaponStats.shotgunWaveMode 
         ? (120 * Math.PI) / 180  // Old T3 mode (deprecated)
@@ -531,28 +587,17 @@ export class EchoSystem {
     );
   }
 
-  /** Spawn a wave projectile with infinite pierce for T3 shotgun */
-  private spawnWaveProjectile(x: number, y: number, vx: number, vy: number, wave: Projectile[]): void {
-    const proj = this.projectilePool.acquire();
-
-    proj.activate(x, y, vx, vy, this.stats.damage);
-
-    // Apply weapon upgrades with infinite pierce for wave
-    proj.setUpgradeProperties(
-      999, // Infinite pierce for continuous wave effect
-      this.weaponStats.splitOnHit,
-      this.weaponStats.explosiveRadius > 0,
-      this.weaponStats.chainCount > 0,
-      this.weaponStats.chainCount,
-      this.weaponStats.homingStrength,
-      this.weaponStats.piercingSizeBoost
-    );
-
-    // Hide individual projectile graphics (only show wave connectors)
-    proj.container.visible = false;
-
-    // Add this projectile to the current wave
-    wave.push(proj);
+  /** Spawn an expanding crimson wave fan (T3 Shotgun) */
+  private spawnCrimsonWave(
+    pos: Vec2,
+    angle: number,
+    maxRadius: number = 200,
+    maxLifetime: number = 0.8,
+    halfAngle: number = Math.PI / 3
+  ): void {
+    const wave = this.crimsonWavePool.acquire();
+    wave.activate(pos, angle, this.stats.damage, maxRadius, maxLifetime, halfAngle);
+    this.activeCrimsonWaves.push(wave);
   }
 
   /** Fire nova burst - Queue projectiles for sequential spawning (0.2s delay each) */
@@ -631,14 +676,20 @@ export class EchoSystem {
   }
 
   /** Spawn split projectiles from a hit */
-  spawnSplitProjectiles(fromPos: Vec2): void {
+  spawnSplitProjectiles(fromPos: Vec2, direction?: Vec2): void {
     if (!this.weaponStats.splitOnHit) return;
 
-    // Split count multiplies with shotgun count
-    const totalSplits = this.weaponStats.splitCount * this.weaponStats.shotgunCount;
     const speed = this.stats.speed * 0.7; // Slower than main projectiles
 
-    // Fire in random directions
+    // T3 Shotgun + any Split Shot: small mini-cone in the kill direction
+    if (this.weaponStats.shotgunLineWaveMode && direction) {
+      const angle = Math.atan2(direction.y, direction.x);
+      this.spawnCrimsonWave(fromPos, angle, 80, 0.4, Math.PI / 5); // smaller, tighter cone
+      return;
+    }
+
+    // T1/T2: fire in random directions
+    const totalSplits = this.weaponStats.splitCount * this.weaponStats.shotgunCount;
     for (let i = 0; i < totalSplits; i++) {
       const angle = Math.random() * Math.PI * 2; // Random angle 0-360°
       const vx = Math.cos(angle) * speed;
@@ -707,6 +758,11 @@ export class EchoSystem {
     return this.dragonPool.getActive();
   }
 
+  /** Get all active crimson waves for collision detection */
+  getActiveCrimsonWaves(): readonly CrimsonWave[] {
+    return this.activeCrimsonWaves;
+  }
+
   /** Spawn a dragon at position flying toward target */
   spawnDragon(pos: Vec2, target: Vec2, damage: number): void {
     const dragon = this.dragonPool.acquire();
@@ -724,20 +780,21 @@ export class EchoSystem {
   private spawnRandomMeteorites(playerPos: Vec2): void {
     const count = this.weaponStats.meteoriteCount;
     const spawnRadius = this.weaponStats.meteoriteSpawnRadius;
-    const radius = this.weaponStats.explosiveRadius;
+    // In meteorite mode use the animated max radius; otherwise fall back to explosiveRadius
+    const maxRadius = this.weaponStats.meteoriteMaxRadius > 0
+      ? this.weaponStats.meteoriteMaxRadius
+      : this.weaponStats.explosiveRadius;
     const damage = this.stats.damage * GAME_CONFIG.UPGRADES.EXPLOSION_DAMAGE_MULT;
     const duration = this.weaponStats.meteoriteDuration;
 
     for (let i = 0; i < count; i++) {
-      // Random angle around player
       const angle = Math.random() * Math.PI * 2;
-      // Random distance from player (50% to 100% of spawn radius)
       const distance = spawnRadius * (0.5 + Math.random() * 0.5);
-      
+
       const x = playerPos.x + Math.cos(angle) * distance;
       const y = playerPos.y + Math.sin(angle) * distance;
-      
-      this.spawnMeteorite({ x, y }, radius, damage, duration);
+
+      this.spawnMeteorite({ x, y }, maxRadius, damage, duration);
     }
   }
 
@@ -757,10 +814,14 @@ export class EchoSystem {
     this.laserBeamPool.releaseAll();
     this.meteoritePool.releaseAll();
     this.dragonPool.releaseAll();
+    this.crimsonWavePool.releaseAll();
+    this.activeCrimsonWaves = [];
     this.clonePool.releaseAll();
     this.activeClone = null;
     this.fireTimer = 0;
-    this.activeWaves = [];
+    this.chainReturnArcs = [];
+    this.meteoriteFireCooldown = 0;
+    this.crimsonWaveFireCooldown = 0;
     this.waveConnectorGraphics.clear();
     
     // Reset stats to default values
@@ -772,6 +833,7 @@ export class EchoSystem {
     this.weaponStats.shotgunCount = 1;
     this.weaponStats.shotgunWaveMode = false;
     this.weaponStats.shotgunLineWaveMode = false;
+    this.weaponStats.shotgunWaveHoming = false;
     this.weaponStats.shotgunWavePierce = 0;
     this.weaponStats.pierceCount = 0;
     this.weaponStats.piercingSizeBoost = 1.0;
@@ -784,6 +846,7 @@ export class EchoSystem {
     this.weaponStats.meteoriteDuration = 3.0;
     this.weaponStats.meteoriteCount = 2;
     this.weaponStats.meteoriteSpawnRadius = 150;
+    this.weaponStats.meteoriteMaxRadius = 0;
     this.weaponStats.chainCount = 0;
     this.weaponStats.chainDragonMode = false;
     this.weaponStats.fireRateMultiplier = 1.0;

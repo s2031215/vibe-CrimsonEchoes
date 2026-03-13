@@ -73,7 +73,7 @@ export class XPOrb {
   }
 
   /** Update orb - move toward player if magnetized */
-  update(dt: number, playerPos: Vec2): boolean {
+  update(dt: number, playerPos: Vec2, playerSpeed: number = GAME_CONFIG.XP.MAGNET_SPEED): boolean {
     if (!this.state.active) return false;
 
     // Bob animation
@@ -90,7 +90,7 @@ export class XPOrb {
     // Move toward player when magnetized
     if (this.state.magnetized) {
       const direction = normalize(subtract(playerPos, this.state.position));
-      const speed = GAME_CONFIG.XP.MAGNET_SPEED;
+      const speed = playerSpeed + GAME_CONFIG.XP.MAGNET_SPEED_BONUS;
 
       this.state.position.x += direction.x * speed * dt;
       this.state.position.y += direction.y * speed * dt;

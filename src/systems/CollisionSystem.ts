@@ -10,8 +10,9 @@ import { SpawnSystem } from "@systems/SpawnSystem";
 import { XPSystem } from "@systems/XPSystem";
 import { Enemy } from "@entities/Enemy";
 import { LightningLink } from "@entities/LightningLink";
+import { DamageNumber } from "@ui/DamageNumber";
 import { ObjectPool } from "@utils/pool";
-import { circlesCollide, distance } from "@utils/math";
+import { circlesCollide, distance, normalize } from "@utils/math";
 import type { Vec2 } from "@/types";
 
 export interface CollisionResult {
@@ -19,12 +20,15 @@ export interface CollisionResult {
   playerDied: boolean;
   enemiesKilled: number;
   finalBossKilled: boolean; // Victory condition
+  playerHealed: boolean;    // Heal orb collected
 }
 
 export class CollisionSystem {
   private explosionContainer: Container;
   private lightningLinkPool: ObjectPool<LightningLink>;
   private lightningContainer: Container;
+  private damageNumberPool: ObjectPool<DamageNumber>;
+  private damageNumberContainer: Container;
 
   constructor(parentContainer: Container) {
     this.explosionContainer = new Container();
@@ -44,6 +48,21 @@ export class CollisionSystem {
       10, // Initial pool size
       50  // Max pool size
     );
+
+    // Damage number pool — rendered on top of everything
+    this.damageNumberContainer = new Container();
+    parentContainer.addChild(this.damageNumberContainer);
+
+    this.damageNumberPool = new ObjectPool<DamageNumber>(
+      () => {
+        const dn = new DamageNumber();
+        this.damageNumberContainer.addChild(dn.container);
+        return dn;
+      },
+      (dn) => dn.reset(),
+      20,  // Initial pool size
+      100  // Max pool size
+    );
   }
 
   /** Check all collisions */
@@ -59,6 +78,7 @@ export class CollisionSystem {
       playerDied: false,
       enemiesKilled: 0,
       finalBossKilled: false,
+      playerHealed: false,
     };
 
     const projectiles = echoSystem.getActiveProjectiles();
@@ -96,6 +116,7 @@ export class CollisionSystem {
         ) {
           // Hit!
           const killed = enemy.takeDamage(proj.state.damage);
+          this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, proj.state.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -129,7 +150,10 @@ export class CollisionSystem {
 
           // Handle split (only on kill)
           if (proj.state.canSplit && killed) {
-            echoSystem.spawnSplitProjectiles(proj.state.position);
+            const vel = proj.state.velocity;
+            const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+            const dir = speed > 0 ? normalize(vel) : undefined;
+            echoSystem.spawnSplitProjectiles(proj.state.position, dir);
           }
 
           // Handle chain lightning (instant damage to nearby enemies)
@@ -175,6 +199,7 @@ export class CollisionSystem {
         ) {
           // Hit boss!
           const killed = boss.takeDamage(proj.state.damage);
+          this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, proj.state.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -214,7 +239,10 @@ export class CollisionSystem {
 
           // Handle split (only on kill)
           if (proj.state.canSplit && killed) {
-            echoSystem.spawnSplitProjectiles(proj.state.position);
+            const vel = proj.state.velocity;
+            const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+            const dir = speed > 0 ? normalize(vel) : undefined;
+            echoSystem.spawnSplitProjectiles(proj.state.position, dir);
           }
 
           // Check if projectile should be destroyed (pierce system)
@@ -246,6 +274,7 @@ export class CollisionSystem {
         )) {
           // Enemy hit by player laser!
           const killed = enemy.takeDamage(beam.damage);
+          this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, beam.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -270,6 +299,7 @@ export class CollisionSystem {
         )) {
           // Boss hit by player laser!
           const killed = boss.takeDamage(beam.damage);
+          this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, beam.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -309,6 +339,7 @@ export class CollisionSystem {
         ) {
           // Dragon hit enemy! Dragons pierce, so don't destroy dragon
           const killed = enemy.takeDamage(dragon.damage);
+          this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, dragon.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -338,6 +369,7 @@ export class CollisionSystem {
         ) {
           // Dragon hit boss! Dragons pierce, so don't destroy dragon
           const killed = boss.takeDamage(dragon.damage);
+          this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, dragon.damage, false);
 
           if (killed) {
             result.enemiesKilled++;
@@ -374,6 +406,7 @@ export class CollisionSystem {
           // Player hit!
           result.playerHit = true;
           result.playerDied = player.takeDamage(enemy.state.damage);
+          this.spawnDamageNumber(playerPos.x, playerPos.y - 8, enemy.state.damage, true);
 
           // Destroy enemy on contact
           spawnSystem.releaseEnemy(enemy);
@@ -395,6 +428,7 @@ export class CollisionSystem {
           // Player hit by boss!
           result.playerHit = true;
           result.playerDied = player.takeDamage(boss.state.damage);
+          this.spawnDamageNumber(playerPos.x, playerPos.y - 8, boss.state.damage, true);
 
           if (result.playerDied) return result;
         }
@@ -417,6 +451,7 @@ export class CollisionSystem {
           // Player hit by boss projectile!
           result.playerHit = true;
           result.playerDied = player.takeDamage(proj.state.damage);
+          this.spawnDamageNumber(playerPos.x, playerPos.y - 8, proj.state.damage, true);
           proj.deactivate(); // Destroy projectile on hit
 
           if (result.playerDied) return result;
@@ -438,9 +473,72 @@ export class CollisionSystem {
           // Player hit by laser beam!
           result.playerHit = true;
           result.playerDied = player.takeDamage(beam.damage);
+          this.spawnDamageNumber(playerPos.x, playerPos.y - 8, beam.damage, true);
           beam.container.visible = false; // Deactivate after hit
 
           if (result.playerDied) return result;
+        }
+      }
+    }
+
+    // Check crimson wave vs enemy collisions (T3 Shotgun — expanding cone)
+    const crimsonWaves = echoSystem.getActiveCrimsonWaves();
+    for (const wave of crimsonWaves) {
+      if (!wave.active) continue;
+
+      for (const enemy of enemies) {
+        if (!enemy.state.active) continue;
+        if (wave.hitEnemies.has(enemy)) continue;
+
+        const dx = enemy.state.position.x - wave.position.x;
+        const dy = enemy.state.position.y - wave.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > wave.radius) continue;
+
+        let angleDiff = Math.abs(Math.atan2(dy, dx) - wave.angle);
+        // Normalize to [0, PI]
+        if (angleDiff > Math.PI) angleDiff = Math.abs(angleDiff - Math.PI * 2);
+        if (angleDiff > wave.halfAngle) continue;
+
+        wave.hitEnemies.add(enemy);
+        const killed = enemy.takeDamage(wave.damage);
+        this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, wave.damage, false);
+        if (killed) {
+          result.enemiesKilled++;
+          xpSystem.spawnOrb(
+            enemy.state.position.x,
+            enemy.state.position.y,
+            enemy.state.xpValue
+          );
+          spawnSystem.releaseEnemy(enemy);
+        }
+      }
+
+      // Check crimson wave vs boss
+      if (boss && boss.state.active && !wave.hitEnemies.has(boss)) {
+        const dx = boss.state.position.x - wave.position.x;
+        const dy = boss.state.position.y - wave.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= wave.radius) {
+          let angleDiff = Math.abs(Math.atan2(dy, dx) - wave.angle);
+          if (angleDiff > Math.PI) angleDiff = Math.abs(angleDiff - Math.PI * 2);
+          if (angleDiff <= wave.halfAngle) {
+            wave.hitEnemies.add(boss);
+            const killed = boss.takeDamage(wave.damage);
+            this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, wave.damage, false);
+            if (killed) {
+              result.enemiesKilled++;
+              if (boss.bossType === 2) {
+                result.finalBossKilled = true;
+              }
+              xpSystem.spawnOrb(
+                boss.state.position.x,
+                boss.state.position.y,
+                boss.state.xpValue
+              );
+              spawnSystem.releaseBoss(boss);
+            }
+          }
         }
       }
     }
@@ -462,6 +560,7 @@ export class CollisionSystem {
 
           if (dist <= meteorite.radius) {
             const killed = enemy.takeDamage(meteorite.damage);
+            this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, meteorite.damage, false);
             if (killed) {
               result.enemiesKilled++;
               xpSystem.spawnOrb(
@@ -482,6 +581,7 @@ export class CollisionSystem {
 
           if (dist <= meteorite.radius) {
             const killed = boss.takeDamage(meteorite.damage);
+            this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, meteorite.damage, false);
             if (killed) {
               result.enemiesKilled++;
               
@@ -498,6 +598,38 @@ export class CollisionSystem {
               spawnSystem.releaseBoss(boss);
             }
           }
+        }
+      }
+    }
+
+    // Check player vs heal orbs
+    const magnetSpeed = GAME_CONFIG.XP.MAGNET_SPEED;
+    for (const orb of spawnSystem.getActiveHealOrbs()) {
+      if (!orb.active) continue;
+      if (orb.update(0, playerPos, magnetSpeed)) {
+        result.playerHealed = true;
+        spawnSystem.releaseHealOrb(orb);
+      }
+    }
+
+    // Check projectile vs heal enemy collisions
+    for (const proj of projectiles) {
+      if (!proj.state.active) continue;
+      for (const he of spawnSystem.getActiveHealEnemies()) {
+        if (!he.active) continue;
+        if (circlesCollide(proj.state.position, projectileRadius, he.position, 9)) {
+          const killed = he.takeDamage(proj.state.damage);
+          this.spawnDamageNumber(he.position.x, he.position.y, proj.state.damage, false);
+          if (killed) {
+            // Spawn heal orb — no XP
+            spawnSystem.spawnHealOrb(he.position.x, he.position.y);
+            spawnSystem.releaseHealEnemy(he);
+          }
+          const shouldDestroy = proj.markHit(gameTime);
+          if (shouldDestroy) {
+            echoSystem.releaseProjectile(proj);
+          }
+          break;
         }
       }
     }
@@ -649,6 +781,7 @@ export class CollisionSystem {
           playerPos,
           damage // Same damage as chain lightning
         );
+        echoSystem.addChainReturnArc(fromPos);
       }
       return;
     }
@@ -659,6 +792,7 @@ export class CollisionSystem {
 
     // Instantly damage the target
     const killed = nearestEnemy.takeDamage(damage);
+    this.spawnDamageNumber(nearestEnemy.state.position.x, nearestEnemy.state.position.y, damage, false);
 
     if (killed) {
       result.enemiesKilled++;
@@ -693,6 +827,7 @@ export class CollisionSystem {
           playerPos,
           damage // Same damage as chain lightning
         );
+        echoSystem.addChainReturnArc(nearestEnemy.state.position);
       }
     }
   }
@@ -742,6 +877,7 @@ export class CollisionSystem {
 
       if (dist <= radius) {
         const killed = enemy.takeDamage(damage);
+        this.spawnDamageNumber(enemy.state.position.x, enemy.state.position.y, damage, false);
         if (killed) {
           result.enemiesKilled++;
           xpSystem.spawnOrb(
@@ -772,6 +908,23 @@ export class CollisionSystem {
       const shouldRemove = link.update(dt);
       if (shouldRemove) {
         this.lightningLinkPool.release(link);
+      }
+    }
+  }
+
+  /** Spawn a floating damage number at world position */
+  private spawnDamageNumber(x: number, y: number, damage: number, isPlayerDamage: boolean): void {
+    const dn = this.damageNumberPool.acquire();
+    // Slight random horizontal offset so multiple numbers don't stack
+    const offsetX = (Math.random() - 0.5) * 10;
+    dn.activate(x + offsetX, y - 4, damage, isPlayerDamage);
+  }
+
+  /** Update all damage number animations */
+  updateDamageNumbers(dt: number): void {
+    for (const dn of Array.from(this.damageNumberPool.getActive())) {
+      if (dn.update(dt)) {
+        this.damageNumberPool.release(dn);
       }
     }
   }

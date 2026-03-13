@@ -111,6 +111,7 @@ export interface WeaponStats {
   shotgunCount: number; // Number of projectiles per shot (spread pattern, default 1)
   shotgunWaveMode: boolean; // T3: 120° wave instead of narrow spread (deprecated, use lineWaveMode)
   shotgunLineWaveMode: boolean; // T3: Line wave attack
+  shotgunWaveHoming: boolean; // T3: Wave steers as a unit toward nearest enemy
   shotgunWavePierce: number; // T3: Pierce count for wave projectiles (0 = no pierce)
   pierceCount: number; // How many enemies to pierce through
   piercingSizeBoost: number; // Projectile size multiplier for piercing (1.0 = normal)
@@ -123,6 +124,7 @@ export interface WeaponStats {
   meteoriteDuration: number; // Duration of meteorite damage area (seconds)
   meteoriteCount: number; // Number of meteorites to spawn per fire
   meteoriteSpawnRadius: number; // Radius around player to spawn meteorites
+  meteoriteMaxRadius: number; // Max radius each meteorite expands to (animates 0→max over 1s)
   chainCount: number; // Number of times to chain to nearby enemies
   chainDragonMode: boolean; // T3: Spawn blue dragon at last chain target
   fireRateMultiplier: number; // Multiply fire rate (1.0 = normal)

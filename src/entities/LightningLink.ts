@@ -5,6 +5,8 @@
 import { Container, Graphics } from "pixi.js";
 import type { Vec2 } from "@/types";
 
+const LINK_SEGMENTS = 8; // Number of jagged segments (7 interior jitter points)
+
 export class LightningLink {
   public container: Container;
   private graphics: Graphics;
@@ -23,16 +25,52 @@ export class LightningLink {
     this.lifetime = this.maxLifetime;
     this.container.visible = true;
 
-    // Draw lightning bolt
     this.graphics.clear();
-    this.graphics.moveTo(from.x, from.y);
-    this.graphics.lineTo(to.x, to.y);
-    this.graphics.stroke({ width: 2, color: 0xFFFF00 }); // Yellow lightning
+    this.drawJaggedArc(from, to);
+  }
 
-    // Add glow effect
-    this.graphics.moveTo(from.x, from.y);
-    this.graphics.lineTo(to.x, to.y);
-    this.graphics.stroke({ width: 4, color: 0xFFFFFF, alpha: 0.5 }); // White glow
+  /** Draw a jagged 3-layer cyan arc between two world-space points */
+  private drawJaggedArc(from: Vec2, to: Vec2): void {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+
+    // Perpendicular unit vector for jitter offsets
+    const px = len > 0 ? -dy / len : 0;
+    const py = len > 0 ? dx / len : 0;
+
+    // Build jagged points: endpoints are exact, interior points get random perpendicular offset
+    const points: { x: number; y: number }[] = [{ x: from.x, y: from.y }];
+    for (let s = 1; s < LINK_SEGMENTS; s++) {
+      const t = s / LINK_SEGMENTS;
+      const jitter = (Math.random() - 0.5) * len * 0.28;
+      points.push({
+        x: from.x + dx * t + px * jitter,
+        y: from.y + dy * t + py * jitter,
+      });
+    }
+    points.push({ x: to.x, y: to.y });
+
+    // Outer glow — thick cyan
+    this.graphics.moveTo(points[0]!.x, points[0]!.y);
+    for (let i = 1; i < points.length; i++) {
+      this.graphics.lineTo(points[i]!.x, points[i]!.y);
+    }
+    this.graphics.stroke({ width: 6, color: 0x00CCFF, alpha: 0.35 });
+
+    // Mid layer — brighter cyan
+    this.graphics.moveTo(points[0]!.x, points[0]!.y);
+    for (let i = 1; i < points.length; i++) {
+      this.graphics.lineTo(points[i]!.x, points[i]!.y);
+    }
+    this.graphics.stroke({ width: 3, color: 0x00FFFF, alpha: 0.7 });
+
+    // White core
+    this.graphics.moveTo(points[0]!.x, points[0]!.y);
+    for (let i = 1; i < points.length; i++) {
+      this.graphics.lineTo(points[i]!.x, points[i]!.y);
+    }
+    this.graphics.stroke({ width: 1.5, color: 0xFFFFFF, alpha: 1.0 });
   }
 
   /** Update link - fade out over time */

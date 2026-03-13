@@ -38,13 +38,15 @@ const SHOTGUN_T2: Upgrade = {
 const SHOTGUN_T3: Upgrade = {
   id: "shotgun_t3",
   name: "Crimson Wave",
-  description: "120° curved wave with infinite pierce",
+  description: "120° curved wave with infinite pierce, steers toward enemies",
   type: "weapon",
   weaponId: "shotgun",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.shotgunCount = 20; // More projectiles for continuous wave
-    game["echoSystem"].weaponStats.shotgunLineWaveMode = true; // 120° curved wave attack
+    game["echoSystem"].weaponStats.shotgunCount = 1;
+    game["echoSystem"].weaponStats.shotgunLineWaveMode = true;
+    game["echoSystem"].weaponStats.shotgunWaveHoming = false;
+    game["echoSystem"].crimsonWaveFireCooldown = 1.5;
     game["weaponTiers"].set("shotgun", 3);
   },
 };
@@ -220,16 +222,18 @@ const EXPLOSIVE_T2: Upgrade = {
 const EXPLOSIVE_T3: Upgrade = {
   id: "explosive_t3",
   name: "Explosive Rounds III - Meteor Storm",
-  description: "Explosions + random meteorites around player",
+  description: "Meteorite rain every 1s, each expands from 0→60 radius over 1s",
   type: "weapon",
   weaponId: "explosive_rounds",
   tier: 3,
   apply: (game: Game) => {
-    game["echoSystem"].weaponStats.explosiveRadius = 60;
-    game["echoSystem"].weaponStats.meteoriteMode = true; // Enable meteorite spawning
-    game["echoSystem"].weaponStats.meteoriteDuration = 3.0; // 3 seconds of lingering damage
-    game["echoSystem"].weaponStats.meteoriteCount = 2; // Spawn 2 meteorites per fire
-    game["echoSystem"].weaponStats.meteoriteSpawnRadius = 150; // Spawn within 150px of player
+    game["echoSystem"].weaponStats.explosiveRadius = 0;
+    game["echoSystem"].weaponStats.meteoriteMode = true;
+    game["echoSystem"].weaponStats.meteoriteDuration = 3.0;
+    game["echoSystem"].weaponStats.meteoriteCount = 1;
+    game["echoSystem"].weaponStats.meteoriteSpawnRadius = 150;
+    game["echoSystem"].weaponStats.meteoriteMaxRadius = 60; // Expanded radius after 1s
+    game["echoSystem"].meteoriteFireCooldown = 1.0;
     game["weaponTiers"].set("explosive_rounds", 3);
   },
 };

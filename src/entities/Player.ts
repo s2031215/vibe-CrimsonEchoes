@@ -195,6 +195,11 @@ export class Player {
     return this.state.invincibilityTimer > 0;
   }
 
+  /** Heal player by amount, capped at max health */
+  heal(amount: number): void {
+    this.state.health = Math.min(this.stats.maxHealth, this.state.health + amount);
+  }
+
   /** Reset player state */
   reset(): void {
     this.stats = {

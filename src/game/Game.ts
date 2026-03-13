@@ -64,6 +64,9 @@ export class Game {
   private shakeIntensity: number = 0;
   private shakeDuration: number = 0;
 
+  // State saved before opening cheat menu so we can resume it on close
+  private preCheatState: GameState = "playing";
+
   constructor() {
     this.container = new Container();
     this.backgroundContainer = new Container();
@@ -115,16 +118,33 @@ export class Game {
     window.addEventListener("keydown", (e) => {
       if (this.state === "levelup") {
         this.levelUpScreen.handleInput(e.key);
-        
-        // Allow SPACE or ENTER to exit Lucky Draw Wheel
+
+        // Allow ENTER to start the spin (before spinning)
+        if (e.key === "Enter" && !this.luckyDrawWheel.isWaitingForUser()) {
+          this.luckyDrawWheel.triggerSpin();
+        }
+
+        // Allow SPACE or ENTER to exit Lucky Draw Wheel (after spinning)
         if ((e.key === " " || e.key === "Enter") && this.luckyDrawWheel.isWaitingForUser()) {
           this.luckyDrawWheel.triggerExit();
         }
       }
-      
+
       // Toggle cheat menu with 'C' key (dev-only)
       if (e.key === "c" || e.key === "C") {
-        this.cheatMenu.toggle(this);
+        if (this.cheatMenu.isVisible()) {
+          // Close: restore state before cheat menu was opened
+          this.cheatMenu.hide();
+          this.state = this.preCheatState;
+        } else {
+          // Open: freeze game by switching to "paused"
+          // Only open from states where it makes sense (not gameover/victory)
+          if (this.state === "playing" || this.state === "levelup") {
+            this.preCheatState = this.state;
+            this.state = "paused";
+            this.cheatMenu.show(this);
+          }
+        }
       }
     });
   }
@@ -213,6 +233,9 @@ export class Game {
         break;
       case "levelup":
         this.updateLevelUp(dt);
+        break;
+      case "paused":
+        // Game fully frozen — cheat menu is open
         break;
       case "gameover":
       case "victory":

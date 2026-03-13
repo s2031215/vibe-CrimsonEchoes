@@ -24,6 +24,9 @@ export class SpawnSystem {
   private boss5MinSpawned: boolean = false;
   private activeBoss: Boss | null = null;
 
+  /** Cheat: override the time-based enemy tier (null = use elapsed time) */
+  public forcedTier: number | null = null;
+
   constructor(parentContainer: Container) {
     this.container = new Container();
     parentContainer.addChild(this.container);
@@ -140,8 +143,8 @@ export class SpawnSystem {
     
     const enemy = this.enemyPool.acquire();
     
-    // Calculate tier based on elapsed time (1 tier per minute)
-    const currentTier = Math.floor(elapsedTime / 60) + 1;
+    // Calculate tier based on elapsed time (1 tier per minute), or use forced tier from cheat
+    const currentTier = this.forcedTier ?? (Math.floor(elapsedTime / 60) + 1);
     
     // Mix enemy tiers: 60% current tier, 40% earlier tiers (if available)
     let tier = currentTier;
@@ -340,5 +343,6 @@ export class SpawnSystem {
     this.boss3MinSpawned = false;
     this.boss5MinSpawned = false;
     this.activeBoss = null;
+    this.forcedTier = null;
   }
 }

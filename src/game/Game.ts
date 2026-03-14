@@ -2,7 +2,7 @@
 // Main Game Class
 // =============================================================================
 
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Text, TextStyle } from "pixi.js";
 import { GAME_CONFIG } from "@game/GameConfig";
 import { Player } from "@entities/Player";
 import { BossXPOrb } from "@entities/BossXPOrb";
@@ -32,11 +32,12 @@ export class Game {
   private uiContainer: Container;
 
   // Core
-  private state: GameState = "playing";
+  private state: GameState = "waiting";
   private elapsedTime: number = 0;
   private remainingTime: number;
   private backgroundGraphics!: Graphics;
   private boundaryGraphics!: Graphics;
+  private waitingOverlay!: Container;
 
   // Systems
   private inputSystem: InputSystem;
@@ -132,6 +133,10 @@ export class Game {
     this.uiContainer.addChild(this.levelUpScreen.container);
     this.uiContainer.addChild(this.luckyDrawWheel.container);
     this.uiContainer.addChild(this.cheatMenu.container);
+
+    // Waiting-to-start overlay (shown until player first moves)
+    this.waitingOverlay = this.createWaitingOverlay();
+    this.uiContainer.addChild(this.waitingOverlay);
 
     // Keyboard support for level up screen and cheat menu
     window.addEventListener("keydown", (e) => {
@@ -247,6 +252,9 @@ export class Game {
 
     // Handle game state
     switch (this.state) {
+      case "waiting":
+        this.updateWaiting();
+        break;
       case "playing":
         this.updatePlaying(dt);
         break;
@@ -550,7 +558,7 @@ export class Game {
 
   /** Restart game */
   private restart(): void {
-    this.state = "playing";
+    this.state = "waiting";
     this.elapsedTime = 0;
     this.remainingTime = GAME_CONFIG.SURVIVAL_TIME;
 
@@ -563,6 +571,54 @@ export class Game {
     this.spawnSystem.reset();
     this.xpSystem.reset();
 
+    // Clean up any live BossXPOrbs so they don't persist into the new run
+    this.bossXPOrbPool.releaseAll();
+    this.bossWasActive = false;
+
+    this.waitingOverlay.visible = true;
     this.gameOverScreen.hide();
+  }
+
+  /** Waiting state — pause everything until the player presses WASD */
+  private updateWaiting(): void {
+    const dir = this.inputSystem.getMovementDirection();
+    if (dir.x !== 0 || dir.y !== 0) {
+      this.state = "playing";
+      this.waitingOverlay.visible = false;
+    }
+  }
+
+  /** Build the WASD hint overlay (canvas-space, centered) */
+  private createWaitingOverlay(): Container {
+    const W = GAME_CONFIG.WIDTH;
+    const H = GAME_CONFIG.HEIGHT;
+
+    const overlay = new Container();
+
+    // Semi-transparent dark panel
+    const bg = new Graphics();
+    const panelW = 160;
+    const panelH = 36;
+    bg.roundRect(W / 2 - panelW / 2, H / 2 - panelH / 2, panelW, panelH, 6);
+    bg.fill({ color: 0x000000, alpha: 0.62 });
+    bg.stroke({ color: 0xff2255, width: 1, alpha: 0.8 });
+    overlay.addChild(bg);
+
+    // Instruction text
+    const style = new TextStyle({
+      fontFamily: "monospace",
+      fontSize: 9,
+      fontWeight: "bold",
+      fill: 0xffffff,
+      align: "center",
+      dropShadow: { color: 0x000000, distance: 1, alpha: 0.9 },
+    });
+    const label = new Text({ text: "Move with WASD to start", style });
+    label.anchor.set(0.5, 0.5);
+    label.x = W / 2;
+    label.y = H / 2;
+    overlay.addChild(label);
+
+    return overlay;
   }
 }

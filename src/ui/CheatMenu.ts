@@ -117,6 +117,9 @@ export class CheatMenu {
     // Wave tier selector
     this.createWaveTierSelector();
 
+    // Spawn boss buttons
+    this.createSpawnBossRow();
+
     // Weapon upgrade buttons
     this.createWeaponButtons();
   }
@@ -128,7 +131,7 @@ export class CheatMenu {
   /** Create wave tier selector row: WAVE TIER: ◀ T# ▶ */
   private createWaveTierSelector(): void {
     const row = new Container();
-    const rowW = 260;
+    const rowW = 160;
     const rowH = 20;
     row.x = GAME_CONFIG.WIDTH / 2 - rowW / 2;
     row.y = 38;
@@ -147,7 +150,7 @@ export class CheatMenu {
       fill: 0xcccccc,
       fontWeight: "bold",
     });
-    const label = new Text({ text: "WAVE TIER:", style: labelStyle });
+    const label = new Text({ text: "WAVE:", style: labelStyle });
     label.x = 6;
     label.y = 5;
     row.addChild(label);
@@ -191,6 +194,101 @@ export class CheatMenu {
     row.addChild(incBtn);
 
     this.container.addChild(row);
+  }
+
+  /** Create a "Spawn Boss" row with T1 and T2 buttons */
+  private createSpawnBossRow(): void {
+    const row = new Container();
+    const rowW = 160;
+    const rowH = 20;
+    row.x = GAME_CONFIG.WIDTH / 2 - rowW / 2;
+    row.y = 62; // directly below wave tier row (38 + 20 + 4px gap)
+
+    // Row background
+    const bg = new Graphics();
+    bg.rect(0, 0, rowW, rowH);
+    bg.fill({ color: 0x1a1a2e });
+    bg.stroke({ color: 0x885555, width: 1 });
+    row.addChild(bg);
+
+    // Label
+    const labelStyle = new TextStyle({
+      fontFamily: "monospace",
+      fontSize: 10,
+      fill: 0xcccccc,
+      fontWeight: "bold",
+    });
+    const label = new Text({ text: "BOSS:", style: labelStyle });
+    label.x = 6;
+    label.y = 5;
+    row.addChild(label);
+
+    // T1 button
+    const t1Btn = this.createBossSpawnButton("T1", 0x884400, 0xff8800);
+    t1Btn.x = rowW - 80;
+    t1Btn.y = 1;
+    t1Btn.on("pointerdown", () => this.spawnBoss(1));
+    row.addChild(t1Btn);
+
+    // T2 button
+    const t2Btn = this.createBossSpawnButton("T2", 0x660022, 0xff2255);
+    t2Btn.x = rowW - 40;
+    t2Btn.y = 1;
+    t2Btn.on("pointerdown", () => this.spawnBoss(2));
+    row.addChild(t2Btn);
+
+    this.container.addChild(row);
+  }
+
+  /** Create a small labeled button for boss spawning */
+  private createBossSpawnButton(label: string, normalColor: number, hoverColor: number): Container {
+    const btn = new Container();
+    const w = 36;
+    const h = 18;
+
+    const bg = new Graphics();
+    bg.rect(0, 0, w, h);
+    bg.fill({ color: normalColor, alpha: 0.9 });
+    bg.stroke({ color: 0xffffff, width: 1, alpha: 0.4 });
+    btn.addChild(bg);
+
+    const textStyle = new TextStyle({
+      fontFamily: "monospace",
+      fontSize: 10,
+      fill: 0xffffff,
+      fontWeight: "bold",
+      align: "center",
+    });
+    const text = new Text({ text: label, style: textStyle });
+    text.anchor.set(0.5);
+    text.x = w / 2;
+    text.y = h / 2;
+    btn.addChild(text);
+
+    btn.eventMode = "static";
+    btn.cursor = "pointer";
+
+    btn.on("pointerover", () => {
+      bg.clear();
+      bg.rect(0, 0, w, h);
+      bg.fill({ color: hoverColor });
+      bg.stroke({ color: 0xffff00, width: 2 });
+    });
+    btn.on("pointerout", () => {
+      bg.clear();
+      bg.rect(0, 0, w, h);
+      bg.fill({ color: normalColor, alpha: 0.9 });
+      bg.stroke({ color: 0xffffff, width: 1, alpha: 0.4 });
+    });
+
+    return btn;
+  }
+
+  /** Force-spawn a boss of given type via SpawnSystem */
+  private spawnBoss(bossType: number): void {
+    if (!this.game) return;
+    const playerPos = this.game["player"].state.position;
+    this.game["spawnSystem"].forceSpawnBoss(playerPos, bossType);
   }
 
   /** Create a small left/right arrow button for the tier selector */
@@ -302,7 +400,7 @@ export class CheatMenu {
       { id: "directional_shot", name: "Directional Shot" },
     ];
 
-    const startY = 64;
+    const startY = 86;
     const spacingY = 25;
     const rowW = 380;
     const rowH = 21;

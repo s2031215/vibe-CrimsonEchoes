@@ -209,7 +209,7 @@ export class EchoSystem {
 
     // Fire at nearest enemy
     if (this.fireTimer <= 0) {
-      const nearestEnemy = this.findNearestEnemy(playerPos, enemies, boss, healEnemies);
+      const nearestEnemy = this.findNearestEnemy(playerPos, enemies, boss, healEnemies, 200);
 
       if (nearestEnemy) {
         this.fireAtTarget(playerPos, this.getEntityPosition(nearestEnemy));
@@ -405,10 +405,11 @@ export class EchoSystem {
     playerPos: Vec2,
     enemies: ReadonlySet<Enemy>,
     boss: Boss | null = null,
-    healEnemies: ReadonlySet<HealEnemy> = new Set()
+    healEnemies: ReadonlySet<HealEnemy> = new Set(),
+    maxRange: number = Infinity
   ): Enemy | Boss | HealEnemy | null {
     let nearest: Enemy | Boss | HealEnemy | null = null;
-    let nearestDist = Infinity;
+    let nearestDist = maxRange; // Only consider enemies within maxRange
 
     // Check regular enemies
     for (const enemy of enemies) {

@@ -296,6 +296,15 @@ export class SpawnSystem {
     }
   }
 
+  /** Force-spawn a boss immediately (used by cheat menu) */
+  forceSpawnBoss(playerPos: { x: number; y: number }, bossType: number): void {
+    // Release any existing boss first so there's room
+    if (this.activeBoss) {
+      this.releaseBoss(this.activeBoss);
+    }
+    this.spawnBoss(playerPos, bossType);
+  }
+
   /** Get active boss */
   getActiveBoss(): Boss | null {
     return this.activeBoss;

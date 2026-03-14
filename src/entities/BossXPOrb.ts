@@ -7,7 +7,7 @@ import { GAME_CONFIG } from "@game/GameConfig";
 import { distance, normalize, subtract } from "@utils/math";
 import type { Vec2 } from "@/types";
 
-const ORB_RADIUS = 10;
+const ORB_RADIUS = 4;
 const BOB_SPEED = 3;
 const BOB_AMP = 2;
 
@@ -33,14 +33,14 @@ export class BossXPOrb {
     // "LV!" label
     const style = new TextStyle({
       fontFamily: "monospace",
-      fontSize: 7,
+      fontSize: 5,
       fontWeight: "bold",
       fill: 0x000000,
       align: "center",
     });
-    this.labelText = new Text({ text: "LV!", style });
+    this.labelText = new Text({ text: "LV", style });
     this.labelText.anchor.set(0.5);
-    this.labelText.x = 0;
+    this.labelText.x = 1;
     this.labelText.y = 0;
     this.container.addChild(this.labelText);
   }
@@ -59,10 +59,6 @@ export class BossXPOrb {
     // Inner highlight
     this.graphics.fill(0xffff88);
     this.graphics.circle(-ORB_RADIUS * 0.25, -ORB_RADIUS * 0.25, ORB_RADIUS * 0.45);
-
-    // Border
-    this.graphics.stroke({ color: 0xff8800, width: 2 });
-    this.graphics.circle(0, 0, ORB_RADIUS);
   }
 
   /** Activate at world position */

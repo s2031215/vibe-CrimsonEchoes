@@ -39,7 +39,7 @@ export class DamageNumber {
   activate(x: number, y: number, damage: number, playerDamage: boolean = false): void {
     this.container.x = x;
     this.container.y = y;
-    this.label.text = damage.toString();
+    this.label.text = Number.isInteger(damage) ? damage.toString() : damage.toFixed(2);
     this.isPlayerDamage = playerDamage;
     this.timer = 0;
     this.active = true;

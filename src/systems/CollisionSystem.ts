@@ -203,18 +203,13 @@ export class CollisionSystem {
 
           if (killed) {
             result.enemiesKilled++;
-            
+
             // Check if this is the final boss (type 2 at 5 minutes)
             if (boss.bossType === 2) {
               result.finalBossKilled = true;
             }
-            
-            // Spawn XP orb at boss position
-            xpSystem.spawnOrb(
-              boss.state.position.x,
-              boss.state.position.y,
-              boss.state.xpValue
-            );
+
+            // Boss drops gold XP orb (BossXPOrb) via Game.ts — no normal XP orb here
             spawnSystem.releaseBoss(boss);
           }
 
@@ -303,17 +298,13 @@ export class CollisionSystem {
 
           if (killed) {
             result.enemiesKilled++;
-            
+
             // Check if this is the final boss (type 2 at 5 minutes)
             if (boss.bossType === 2) {
               result.finalBossKilled = true;
             }
-            
-            xpSystem.spawnOrb(
-              boss.state.position.x,
-              boss.state.position.y,
-              boss.state.xpValue
-            );
+
+            // Boss drops gold XP orb (BossXPOrb) via Game.ts — no normal XP orb here
             spawnSystem.releaseBoss(boss);
           }
           // Laser doesn't get destroyed on hit (pierces everything)
@@ -373,17 +364,13 @@ export class CollisionSystem {
 
           if (killed) {
             result.enemiesKilled++;
-            
+
             // Check if this is the final boss (type 2 at 5 minutes)
             if (boss.bossType === 2) {
               result.finalBossKilled = true;
             }
-            
-            xpSystem.spawnOrb(
-              boss.state.position.x,
-              boss.state.position.y,
-              boss.state.xpValue
-            );
+
+            // Boss drops gold XP orb (BossXPOrb) via Game.ts — no normal XP orb here
             spawnSystem.releaseBoss(boss);
           }
         }
@@ -531,11 +518,7 @@ export class CollisionSystem {
               if (boss.bossType === 2) {
                 result.finalBossKilled = true;
               }
-              xpSystem.spawnOrb(
-                boss.state.position.x,
-                boss.state.position.y,
-                boss.state.xpValue
-              );
+              // Boss drops gold XP orb (BossXPOrb) via Game.ts — no normal XP orb here
               spawnSystem.releaseBoss(boss);
             }
           }
@@ -584,17 +567,13 @@ export class CollisionSystem {
             this.spawnDamageNumber(boss.state.position.x, boss.state.position.y, meteorite.damage, false);
             if (killed) {
               result.enemiesKilled++;
-              
+
               // Check if this is the final boss (type 2 at 5 minutes)
               if (boss.bossType === 2) {
                 result.finalBossKilled = true;
               }
-              
-              xpSystem.spawnOrb(
-                boss.state.position.x,
-                boss.state.position.y,
-                boss.state.xpValue
-              );
+
+              // Boss drops gold XP orb (BossXPOrb) via Game.ts — no normal XP orb here
               spawnSystem.releaseBoss(boss);
             }
           }

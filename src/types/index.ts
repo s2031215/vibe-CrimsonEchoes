@@ -74,7 +74,7 @@ export interface XPOrbState extends EntityState {
 }
 
 /** Game state machine */
-export type GameState = "loading" | "playing" | "paused" | "gameover" | "victory" | "levelup";
+export type GameState = "loading" | "playing" | "paused" | "gameover" | "victory" | "levelup" | "waiting";
 
 /** Keyboard input state */
 export interface InputState {

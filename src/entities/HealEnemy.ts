@@ -126,22 +126,9 @@ export class HealEnemy {
       moveDir = this.wanderDir;
     }
 
-    // Apply movement
-    const newX = this.position.x + moveDir.x * speed * dt;
-    const newY = this.position.y + moveDir.y * speed * dt;
-
-    // After wander move, clamp back out if we accidentally drifted too close
-    const afterDist = distance({ x: newX, y: newY }, playerPos);
-    if (afterDist < desiredDist) {
-      // Push position back to exactly desiredDist along the flee direction
-      const toPlayer = subtract(playerPos, { x: newX, y: newY });
-      const fleeDir = normalize({ x: -toPlayer.x, y: -toPlayer.y });
-      this.position.x = playerPos.x + fleeDir.x * desiredDist;
-      this.position.y = playerPos.y + fleeDir.y * desiredDist;
-    } else {
-      this.position.x = newX;
-      this.position.y = newY;
-    }
+    // Apply movement at flat speed — no teleport or boost
+    this.position.x += moveDir.x * speed * dt;
+    this.position.y += moveDir.y * speed * dt;
 
     // Clamp to playable area
     const margin = GAME_CONFIG.BOUNDARY.MARGIN + 10;
